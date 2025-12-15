@@ -1,0 +1,6 @@
+dist-newstyle
+*.hp
+*.eventlog
+*.sqlite
+*.eventlog.html
+*.local
