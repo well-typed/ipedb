@@ -71,4 +71,4 @@ queryCommand =
 indexCommand :: Parser IndexOptions
 indexCommand =
   IndexOptions
-    <$> strOption (long "eventlog" <> short 'f' <> help "Eventlog location to index" <> metavar "FILENAME")
+    <$> strArgument (help "Eventlog location to index" <> metavar "FILENAME")

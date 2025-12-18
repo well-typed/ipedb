@@ -39,6 +39,7 @@ library
     IpeDb.InfoProv
     IpeDb.Main
     IpeDb.Options
+    IpeDb.Query
     IpeDb.Table
     IpeDb.Types
 
