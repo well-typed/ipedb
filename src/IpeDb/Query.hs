@@ -1,12 +1,14 @@
 module IpeDb.Query (
   withInfoProvDb,
+  setupInfoProvDb,
+  populateFromEventlog,
   lookupInfoProv,
+  insertInfoProv,
+  listInfoProvs,
 ) where
 
-import qualified Database.SQLite.Simple as Sqlite
-import Database.SQLite.Simple.Types (Only (..))
+import qualified IpeDb.Eventlog.Index as Index
 import IpeDb.InfoProv
-import IpeDb.Table
 import IpeDb.Types
 
 -- ----------------------------------------------------------------------------
@@ -14,12 +16,25 @@ import IpeDb.Types
 -- ----------------------------------------------------------------------------
 
 withInfoProvDb :: FilePath -> (InfoProvDb -> IO a) -> IO a
-withInfoProvDb fp act = Sqlite.withConnection fp $ \conn ->
-  act (InfoProvDb{conn})
+withInfoProvDb fp act =
+  Index.withDatabase fp (\conn -> act InfoProvDb{conn})
+
+setupInfoProvDb :: InfoProvDb -> IO ()
+setupInfoProvDb db =
+  Index.setupDb db.conn
+
+populateFromEventlog :: InfoProvDb -> FilePath -> IO ()
+populateFromEventlog db fp =
+  Index.generateInfoProvDb db.conn fp
 
 lookupInfoProv :: InfoProvDb -> IpeId -> IO (Maybe InfoProv)
 lookupInfoProv db ipeId = do
-  r <- Sqlite.query db.conn findInfoTableQuery (Only ipeId)
-  case r of
-    [ipe] -> pure $ Just ipe
-    _ -> pure $ Nothing
+  Index.findOneInfoProv db.conn ipeId
+
+insertInfoProv :: InfoProvDb -> InfoProv -> IO ()
+insertInfoProv db ipe = do
+  Index.insertInfoProv db.conn ipe
+
+listInfoProvs :: InfoProvDb -> IO [InfoProv]
+listInfoProvs db = do
+  Index.findAllInfoProvs db.conn

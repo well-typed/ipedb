@@ -1,12 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module IpeDb.Eventlog.Index (
+  -- * High level API for interacting with the database
+  withDatabase,
   generateInfoProvDb,
+  findOneInfoProv,
+  findAllInfoProvs,
+
+  -- * Low level API for interacting with the database
   setupDb,
+  setupTables,
   setupIndexing,
-  insertInfoProvData,
   insertInfoProv,
   upsertInfoProvStrings,
+
+  -- * ghc-events specific helpers
+  insertInfoProvData,
 )
 where
 
@@ -16,26 +25,41 @@ import Database.SQLite.Simple.Types (Only (..))
 import qualified GHC.RTS.Events as GhcEvents
 import IpeDb.InfoProv as Ipe
 import IpeDb.Table as Table
-import IpeDb.Types
 
-insertInfoProvData :: (Foldable t) => Sqlite.Connection -> t GhcEvents.Event -> IO ()
-insertInfoProvData conn es = traverse_ (processIpeEvents conn) es
+findOneInfoProv :: Sqlite.Connection -> IpeId -> IO (Maybe InfoProv)
+findOneInfoProv conn ipeId = do
+  r <- Sqlite.query conn findInfoTableQuery (Only ipeId)
+  case r of
+    [ipe] -> pure $ Just ipe
+    _ -> pure $ Nothing
 
-generateInfoProvDb :: InfoProvDb -> FilePath -> IO ()
-generateInfoProvDb db fp = do
-  Sqlite.withExclusiveTransaction db.conn $ setupDb db.conn
-  setupIndexing db.conn
+findAllInfoProvs :: Sqlite.Connection -> IO [InfoProv]
+findAllInfoProvs conn = do
+  Sqlite.query conn findAllInfoTablesQuery ()
+
+generateInfoProvDb :: Sqlite.Connection -> FilePath -> IO ()
+generateInfoProvDb conn fp = do
+  setupDb conn
   GhcEvents.readEventLogFromFile fp >>= \case
     Left err -> fail err
-    Right (GhcEvents.EventLog _h (GhcEvents.Data es)) -> Sqlite.withExclusiveTransaction db.conn $ do
-      insertInfoProvData db.conn es
+    Right (GhcEvents.EventLog _h (GhcEvents.Data es)) -> Sqlite.withExclusiveTransaction conn $ do
+      insertInfoProvData conn es
+
+setupDb :: Sqlite.Connection -> IO ()
+setupDb conn = do
+  Sqlite.withExclusiveTransaction conn $ setupTables conn
+  setupIndexing conn
+
+withDatabase :: FilePath -> (Sqlite.Connection -> IO a) -> IO a
+withDatabase fp act = Sqlite.withConnection fp $ \conn ->
+  act conn
 
 -- ----------------------------------------------------------------------------
 -- Low Level Sqlite api
 -- ----------------------------------------------------------------------------
 
-setupDb :: Sqlite.Connection -> IO ()
-setupDb conn = do
+setupTables :: Sqlite.Connection -> IO ()
+setupTables conn = do
   Sqlite.execute_ conn dropStringTableStmt
   Sqlite.execute_ conn dropInfoProvTableStmt
   Sqlite.execute_ conn dropInfoProvTableViewStmt
@@ -91,6 +115,9 @@ upsertInfoProvStrings conn prov = do
 -- ----------------------------------------------------------------------------
 -- Eventlog processing
 -- ----------------------------------------------------------------------------
+
+insertInfoProvData :: (Foldable t) => Sqlite.Connection -> t GhcEvents.Event -> IO ()
+insertInfoProvData conn es = traverse_ (processIpeEvents conn) es
 
 processIpeEvents :: Sqlite.Connection -> GhcEvents.Event -> IO ()
 processIpeEvents conn ev = case eventInfoToInfoProv (GhcEvents.evSpec ev) of

@@ -9,6 +9,7 @@ module IpeDb.Table (
   infoProvTableStmt,
   infoProvTableViewStmt,
   findInfoTableQuery,
+  findAllInfoTablesQuery,
   insertInfoTableQuery,
   insertOrIgnoreString,
   getStringEntry,
@@ -83,6 +84,9 @@ infoProvTableViewStmt =
 
 findInfoTableQuery :: Sqlite.Query
 findInfoTableQuery = "SELECT * FROM view_info_prov WHERE info_id = ?;"
+
+findAllInfoTablesQuery :: Sqlite.Query
+findAllInfoTablesQuery = "SELECT * FROM view_info_prov;"
 
 insertInfoTableQuery :: Sqlite.Query
 insertInfoTableQuery =
