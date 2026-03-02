@@ -8,6 +8,7 @@ description: Tool and library to index an `.eventlog` file and query IPE data.
 maintainer: hannes@well-typed.com
 build-type: Simple
 extra-doc-files: CHANGELOG.md
+                 README.md
 category: Development
 tested-with:
   ghc ==9.10.3
