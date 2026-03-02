@@ -4,3 +4,4 @@ dist-newstyle
 *.sqlite
 *.eventlog.html
 *.local
+!test/data/*.eventlog

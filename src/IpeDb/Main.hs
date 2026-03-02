@@ -5,7 +5,6 @@ module IpeDb.Main (defaultMain) where
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
-import IpeDb.Eventlog.Index
 import IpeDb.InfoProv
 import qualified IpeDb.Options as Opts
 import IpeDb.Query
@@ -19,7 +18,7 @@ defaultMain = do
         Nothing -> Text.putStrLn $ "No Info Prov found for " <> Text.show query.ipeId
         Just prov -> Text.putStrLn $ prettyInfoProv prov
     Opts.Index index -> withInfoProvDb opts.databaseFp $ \db -> do
-      generateInfoProvDb db index.eventlog
+      populateFromEventlog db index.eventlog
 
 prettyInfoProv :: InfoProv -> Text
 prettyInfoProv prov =
