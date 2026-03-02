@@ -20,6 +20,7 @@ import Data.Int
 import qualified Database.SQLite.Simple as Sqlite
 import IpeDb.InfoProv
 import GHC.Generics (Generic)
+import Data.Text (Text)
 
 data InfoProvRow = InfoProvRow
   { infoId :: !IpeId
@@ -29,6 +30,7 @@ data InfoProvRow = InfoProvRow
   , label :: !Int64
   , moduleName :: !Int64
   , srcLoc :: !Int64
+  , srcLocRange :: !Text
   }
   deriving (Show, Eq, Ord, Generic)
   deriving anyclass (Sqlite.FromRow, Sqlite.ToRow)
@@ -54,13 +56,14 @@ infoProvTableStmt :: Sqlite.Query
 infoProvTableStmt =
   "\
   \ CREATE TABLE info_prov (                                \
-  \    info_id      INTEGER PRIMARY KEY,                    \
-  \    table_name   INTEGER NOT NULL REFERENCES strings(id),\
-  \    closure_desc INTEGER NOT NULL,                       \
-  \    type_desc    INTEGER NOT NULL REFERENCES strings(id),\
-  \    label        INTEGER NOT NULL REFERENCES strings(id),\
-  \    module_name  INTEGER NOT NULL REFERENCES strings(id),\
-  \    src_loc      INTEGER NOT NULL REFERENCES strings(id) \
+  \    info_id         INTEGER PRIMARY KEY,                    \
+  \    table_name      INTEGER NOT NULL REFERENCES strings(id),\
+  \    closure_desc    INTEGER NOT NULL,                       \
+  \    type_desc       INTEGER NOT NULL REFERENCES strings(id),\
+  \    label           INTEGER NOT NULL REFERENCES strings(id),\
+  \    module_name     INTEGER NOT NULL REFERENCES strings(id),\
+  \    src_loc         INTEGER NOT NULL REFERENCES strings(id),\
+  \    src_loc_range   TEXT NOT NULL                           \
   \);"
 
 infoProvTableViewStmt :: Sqlite.Query
@@ -74,7 +77,7 @@ infoProvTableViewStmt =
   \   type_desc.value AS type_desc,                                \
   \   label.value AS label,                                        \
   \   module_name.value AS module_name,                            \
-  \   src_loc.value AS src_loc                                     \
+  \   concat(src_loc.value, i.src_loc_range) AS src_loc            \
   \ FROM info_prov i                                               \
   \ JOIN strings AS table_name   ON i.table_name = table_name.id   \
   \ JOIN strings AS type_desc    ON i.type_desc = type_desc.id     \
@@ -92,8 +95,8 @@ insertInfoTableQuery :: Sqlite.Query
 insertInfoTableQuery =
   "\
   \ INSERT INTO info_prov\
-  \   (info_id, table_name, closure_desc, type_desc, label, module_name, src_loc)\
-  \ VALUES (?, ?, ?, ?, ?, ?, ?);"
+  \   (info_id, table_name, closure_desc, type_desc, label, module_name, src_loc, src_loc_range)\
+  \ VALUES (?, ?, ?, ?, ?, ?, ?, ?);"
 
 insertOrIgnoreString :: Sqlite.Query
 insertOrIgnoreString = "INSERT OR IGNORE INTO strings(value) VALUES (?);"
@@ -111,7 +114,7 @@ getIpeStrings =
   \ JOIN strings AS type_desc    ON ? = type_desc.value   \
   \ JOIN strings AS label        ON ? = label.value       \
   \ JOIN strings AS module_name  ON ? = module_name.value \
-  \ JOIN strings AS src_loc      ON ? = src_loc.value\
+  \ JOIN strings AS src_loc      ON ? = src_loc.value     \
   \  WHERE ? = table_name.value ;"
 
 getStringEntry :: Sqlite.Query

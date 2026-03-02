@@ -13,7 +13,7 @@ This is primarily useful for analyzing memory usage in Haskell programs compiled
 Build and run with a GHC eventlog file:
 
 ```
-cabal run exe:ipedb -- <database.sqlite> index -f <program.eventlog>
+cabal run exe:ipedb -- <database.sqlite> index <program.eventlog>
 cabal run exe:ipedb -- <database.sqlite> query -i 0x<hash>
 ```
 
