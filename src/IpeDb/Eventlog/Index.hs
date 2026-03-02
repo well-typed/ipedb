@@ -25,6 +25,8 @@ import Database.SQLite.Simple.Types (Only (..))
 import qualified GHC.RTS.Events as GhcEvents
 import IpeDb.InfoProv as Ipe
 import IpeDb.Table as Table
+import Data.Text (Text)
+import qualified Data.Text as Text
 
 findOneInfoProv :: Sqlite.Connection -> IpeId -> IO (Maybe InfoProv)
 findOneInfoProv conn ipeId = do
@@ -82,6 +84,8 @@ insertInfoProv conn prov = do
 
 upsertInfoProvStrings :: Sqlite.Connection -> InfoProv -> IO InfoProvRow
 upsertInfoProvStrings conn prov = do
+  let
+    (srcLocFile, srcLocRange) = splitGhcSrcLoc prov.srcLoc
   Sqlite.executeMany
     conn
     insertOrIgnoreString
@@ -89,7 +93,7 @@ upsertInfoProvStrings conn prov = do
     , Only prov.typeDesc
     , Only prov.label
     , Only prov.moduleName
-    , Only prov.srcLoc
+    , Only srcLocFile
     ]
   [(taId, tyId, labelId, modId, srcLocId)] <-
     Sqlite.query
@@ -98,7 +102,7 @@ upsertInfoProvStrings conn prov = do
       ( prov.typeDesc
       , prov.label
       , prov.moduleName
-      , prov.srcLoc
+      , srcLocFile
       , prov.tableName
       )
   pure
@@ -110,7 +114,11 @@ upsertInfoProvStrings conn prov = do
       , Table.label = labelId
       , Table.moduleName = modId
       , Table.srcLoc = srcLocId
+      , Table.srcLocRange = srcLocRange
       }
+
+splitGhcSrcLoc :: Text -> (Text, Text)
+splitGhcSrcLoc srcLoc = Text.break (== ':') srcLoc
 
 -- ----------------------------------------------------------------------------
 -- Eventlog processing
