@@ -6,6 +6,7 @@ module IpeDb.Table (
   dropInfoProvTableStmt,
   dropInfoProvTableViewStmt,
   stringTableStmt,
+  stringValueIndexStmt,
   infoProvTableStmt,
   infoProvTableViewStmt,
   findInfoTableQuery,
@@ -51,6 +52,13 @@ stringTableStmt =
   \    id INTEGER PRIMARY KEY,                    \
   \    value TEXT NOT NULL UNIQUE                 \
   \);"
+
+stringValueIndexStmt :: Sqlite.Query
+stringValueIndexStmt =
+  "\
+  \ CREATE UNIQUE INDEX IF NOT EXISTS idx_strings_value \
+  \    ON strings(value);                               \
+  \"
 
 infoProvTableStmt :: Sqlite.Query
 infoProvTableStmt =
