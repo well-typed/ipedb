@@ -66,6 +66,7 @@ setupTables conn = do
   Sqlite.execute_ conn dropInfoProvTableStmt
   Sqlite.execute_ conn dropInfoProvTableViewStmt
   Sqlite.execute_ conn stringTableStmt
+  Sqlite.execute_ conn stringValueIndexStmt
   Sqlite.execute_ conn infoProvTableStmt
   Sqlite.execute_ conn infoProvTableViewStmt
 
