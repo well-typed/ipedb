@@ -4,4 +4,6 @@ dist-newstyle
 *.sqlite
 *.eventlog.html
 *.local
+*.ipedb.sqlite3
+*.ipedb
 !test/data/*.eventlog

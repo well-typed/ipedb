@@ -68,6 +68,25 @@ executable ipedb
   hs-source-dirs: app
   default-language: Haskell2010
 
+executable ipedb-new
+  import: warnings, defaults
+  main-is: Main.hs
+  build-depends:
+    base,
+    binary,
+    bytestring,
+    directory,
+    filepath,
+    ghc-events,
+    lsm-tree,
+    machines,
+    optparse-applicative,
+    text,
+    vector,
+
+  hs-source-dirs: ipedb-new
+  default-language: Haskell2010
+
 test-suite ipedb-test
   import: warnings, defaults
   type: exitcode-stdio-1.0
