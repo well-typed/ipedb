@@ -1,6 +1,14 @@
-# Revision history for eventlog-splittable-ipe
+# Revision history for ipedb
 
-## 0.1.0.0 -- 2026.03.02
+## 0.2.0.0 -- 2026-07-02
 
-* Allows to index and query `.eventlog` files
-* First version. Released on an unsuspecting world.
+This version is a complete reimplementation of the `ipedb` tool and library.
+
+- The database format is changed to `lsm-tree`, which substantially speeds up indexing.
+  For instance, indexing the IPE entries for GHC goes down from 1-1/2 minutes to 7 seconds.
+- The library exposes a more stable and database-agnostic API.
+- The command-line interface for the `ipedb` tool is redesigned and includes listing all entries.
+
+## 0.1.0.0 -- 2026-03-02
+
+Experimental release of the `ipedb` tool and library, which build IPE databases from eventlog files using SQLite3.
