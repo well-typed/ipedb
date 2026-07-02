@@ -1,1 +1,13 @@
-packages: .
+packages: ipedb.cabal
+
+-- 2026-07-02:
+-- disable io_uring support in blockio
+package blockio
+  flags: +serialblockio
+
+-- 2026-07-02:
+-- relax constraints for GHC 9.14
+if impl(ghc >=9.14) && impl(ghc < 10)
+  allow-newer:
+    , base
+    , template-haskell
