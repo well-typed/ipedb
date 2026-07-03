@@ -11,7 +11,10 @@ maintainer: wen@well-typed.com
 copyright: (c) 2025-2026 Well-Typed
 category: Development
 build-type: Simple
-extra-doc-files: CHANGELOG.md
+extra-doc-files:
+  CHANGELOG.md
+  README.md
+
 tested-with: ghc ==9.8.4 || ==9.10.3 || ==9.12.4 || ==9.14.1
 
 source-repository head
