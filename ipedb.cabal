@@ -69,7 +69,6 @@ library
     src-internal
 
   exposed-modules:
-    IpeDB
     IpeDB.Database
     IpeDB.Types.CostCentre
     IpeDB.Types.InfoProv
@@ -77,10 +76,6 @@ library
 
   other-modules:
     Data.Binary.Text
-    Paths_ipedb
-
-  autogen-modules:
-    Paths_ipedb
 
   build-depends:
     base >=4.16 && <4.23,
@@ -95,7 +90,6 @@ library
     hashable >=1.4 && <1.6,
     lsm-tree >=1.1 && <1.2,
     machines >=0.7.4 && <0.8,
-    optparse-applicative >=0.17 && <0.20,
     tar >=0.7 && <0.8,
     temporary >=1.1 && <1.4,
     text >=1.2 && <2.2,
@@ -116,7 +110,17 @@ executable ipedb
   import: language
   hs-source-dirs: app
   main-is: Main.hs
-  build-depends: ipedb
+  other-modules: Paths_ipedb
+  autogen-modules: Paths_ipedb
+  build-depends:
+    base >=4.16 && <4.23,
+    bytestring >=0.11 && <0.13,
+    data-default >=0.2 && <0.9,
+    ghc-events >=0.20 && <0.21,
+    ipedb,
+    machines >=0.7.4 && <0.8,
+    optparse-applicative >=0.17 && <0.20,
+    vector >=0.11 && <0.14,
 
 test-suite ipedb-test
   import: language
