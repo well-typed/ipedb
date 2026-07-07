@@ -46,6 +46,8 @@ module IpeDB.Database (
   TableFormat (..),
   defaultTableFormat,
   withTableFrom,
+  SaveOptions (flatten),
+  defaultSaveOptions,
   saveTable,
 ) where
 
@@ -493,19 +495,61 @@ withTableFrom session inputRelPath inputFormat action = do
       action Table{..}
 
 {- |
+Flatten an @lsm-tree@ `Table`.
+-}
+flattenTable ::
+  (Value v) =>
+  Table k v ->
+  IO (Table k v)
+flattenTable Table{..} = do
+  table' <- LSMT.union table table
+  pure $ Table{table = table', ..}
+
+{- |
+Options for `saveTable`.
+
+[`flatten` :: `Bool`]:
+  Flatten the table before saving. This requires a number of I\/O operations
+  that is linear in the number of entries, but makes subsequent lookups faster.
+  The default is `False`.
+-}
+newtype SaveOptions = SaveOptions
+  { flatten :: Bool
+  }
+
+{- |
+The default options for `saveTable`.
+-}
+defaultSaveOptions :: SaveOptions
+defaultSaveOptions =
+  SaveOptions{flatten = False}
+
+instance Default SaveOptions where
+  def :: SaveOptions
+  def = defaultSaveOptions
+
+{- |
 Save a table.
 
 The target path must not already exist.
 -}
 saveTable ::
+  (Value v) =>
+  SaveOptions ->
   Table k v ->
   FilePath ->
   TableFormat ->
   IO ()
-saveTable table targetRelPath targetFormat = do
+saveTable options table' targetRelPath targetFormat = do
   -- If the target path already exists, throw a TargetExistsError.
   targetExists <- SD.doesPathExist targetRelPath
   when targetExists . throwIO $ TargetExistsError targetRelPath
+
+  -- Flatten an lsm-tree table, if options.flatten is set.
+  table <-
+    if options.flatten
+      then flattenTable table'
+      else pure table'
 
   -- Export the lsm-tree snapshot by hard linking.
   let saveLSMTreeSnapshotV2 :: IO ()

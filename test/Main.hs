@@ -18,7 +18,7 @@ main = do
     [ testGroup "ccdb" $
         let
           -- Test indexing the jumpy-jump eventlog.
-          testCCDBIndexJumpyJumpWith tableFormat =
+          testCCDBIndexJumpyJumpWith tableFormat tableFlatten =
             TestIndexOptions
               { executable = "ccdb"
               , eventlog = dataDir </> "jumpy-jump.eventlog.gz"
@@ -36,14 +36,17 @@ main = do
               , ..
               }
          in
-          [ testIndexWith (testCCDBIndexJumpyJumpWith "lsm")
-          , testIndexWith (testCCDBIndexJumpyJumpWith "tar")
-          , testIndexWith (testCCDBIndexJumpyJumpWith "tgz")
+          [ testIndexWith (testCCDBIndexJumpyJumpWith "lsm" False)
+          , testIndexWith (testCCDBIndexJumpyJumpWith "tar" False)
+          , testIndexWith (testCCDBIndexJumpyJumpWith "tgz" False)
+          , testIndexWith (testCCDBIndexJumpyJumpWith "lsm" True)
+          , testIndexWith (testCCDBIndexJumpyJumpWith "tar" True)
+          , testIndexWith (testCCDBIndexJumpyJumpWith "tgz" True)
           ]
     , testGroup "ipedb" $
         let
           -- Test indexing the oddball eventlog.
-          testIpeDBIndexOddbalWith tableFormat =
+          testIpeDBIndexOddbalWith tableFormat tableFlatten =
             TestIndexOptions
               { executable = "ipedb"
               , eventlog = dataDir </> "oddball.eventlog.gz"
@@ -74,9 +77,12 @@ main = do
               , tableFormat = "tgz"
               }
          in
-          [ testIndexWith (testIpeDBIndexOddbalWith "lsm")
-          , testIndexWith (testIpeDBIndexOddbalWith "tar")
-          , testIndexWith (testIpeDBIndexOddbalWith "tgz")
+          [ testIndexWith (testIpeDBIndexOddbalWith "lsm" False)
+          , testIndexWith (testIpeDBIndexOddbalWith "tar" False)
+          , testIndexWith (testIpeDBIndexOddbalWith "tgz" False)
+          , testIndexWith (testIpeDBIndexOddbalWith "lsm" True)
+          , testIndexWith (testIpeDBIndexOddbalWith "tar" True)
+          , testIndexWith (testIpeDBIndexOddbalWith "tgz" True)
           , testEqualWith testIpeDBEqualFibber
           ]
     , testGroup "SrcLoc" $
@@ -107,13 +113,19 @@ data TestIndexOptions = TestIndexOptions
   { executable :: String
   , eventlog :: FilePath
   , tableFormat :: String
+  , tableFlatten :: Bool
   , numEntries :: Int
   , checkEntries :: [(String, String)]
   }
 
 instance HasField "testName" TestIndexOptions TestName where
   getField :: TestIndexOptions -> TestName
-  getField options = options.executable <> "[" <> toDatabasePath options.eventlog options.tableFormat <> "]"
+  getField options =
+    options.executable
+      <> "["
+      <> toDatabasePath options.eventlog options.tableFormat
+      <> (if options.tableFlatten then ",flatten" else "")
+      <> "]"
 
 testIndexWith :: TestIndexOptions -> TestTree
 testIndexWith options =
@@ -121,11 +133,12 @@ testIndexWith options =
     withSystemTempDirectory ("ipedb-test-" <> options.testName) $ \tempDir -> do
       let databasePath = tempDir </> toDatabasePath options.eventlog options.tableFormat
 
-      -- Create an IpeDB.
-      callProcess options.executable ["index", options.eventlog, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, "--output=" <> databasePath]
+      -- Create a database.
+      let optFlatten = if options.tableFlatten then "--flatten" else "--no-flatten"
+      callProcess options.executable ["index", options.eventlog, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, optFlatten, "--output=" <> databasePath]
       assertBool ("Missing output " <> databasePath) =<< doesPathExist databasePath
 
-      -- Count the number of entries in the IpeDB.
+      -- Count the number of entries in the database.
       entries <- readProcess options.executable ["list", databasePath, "--table-format=" <> options.tableFormat] ""
       assertEqual ("Database " <> databasePath <> " contains wrong number of entries.") options.numEntries (length $ lines entries)
 
