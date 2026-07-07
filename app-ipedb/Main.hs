@@ -11,6 +11,7 @@ import Data.Default (Default (..))
 import Data.Foldable (for_)
 import Data.Machine ((~>))
 import Data.Machine qualified as M
+import Data.Maybe (fromMaybe)
 import Data.String (IsString (..))
 import Data.Vector qualified as V
 import Data.Version qualified as V (showVersion)
@@ -44,7 +45,8 @@ runIndex IndexOptions{..} = do
           fromHandle eventlogEncoding eventlogSourceHandle
             ~> decodeEvent
             ~> DB.indexer IP.toInfoProv def{DB.indexerBufferSize = bufferSize} table
-        DB.saveTable table ipeDBOutputPath ipeDBTableFormat
+        let saveOptions = def{DB.flatten = fromMaybe (shouldFlatten ipeDBTableFormat) ipeDBFlatten}
+        DB.saveTable saveOptions table ipeDBOutputPath ipeDBTableFormat
 
 --------------------------------------------------------------------------------
 -- Query
@@ -187,7 +189,7 @@ decodeEvent = M.construct $ loop decodeEventLog
   loop (Error _ err) = error err
 
 --------------------------------------------------------------------------------
--- IpeDB Options
+-- database Options
 --------------------------------------------------------------------------------
 
 data IpeDBOptions
@@ -223,6 +225,7 @@ data IndexOptions = IndexOptions
   , eventlogEncoding :: EventlogEncoding
   , ipeDBOutputPath :: !FilePath
   , ipeDBTableFormat :: !DB.TableFormat
+  , ipeDBFlatten :: !(Maybe Bool)
   , bufferSize :: !Word32
   }
 
@@ -239,7 +242,29 @@ indexOptionsParser =
     <*> eventlogEncodingParser
     <*> ipeDBOutputPathParser
     <*> tableFormatParser
+    <*> O.optional (ipeDBFlattenParser O.<|> ipeDBNoFlattenParser)
     <*> indexBufferSizeParser
+
+shouldFlatten :: DB.TableFormat -> Bool
+shouldFlatten = \case
+  DB.LSMTreeSnapshotV2 -> False
+  DB.LSMTreeSnapshotV2Tar -> True
+  DB.LSMTreeSnapshotV2TarGz -> True
+
+ipeDBFlattenParser :: O.Parser Bool
+ipeDBFlattenParser =
+  O.flag' True . mconcat $
+    [ O.long "flatten"
+    , O.help "Flatten the lsm-tree database. This improves the speed of lookups. By default, this is disabled for the 'lsm' format and enabled for the 'tar' and 'tgz' formats."
+    ]
+
+ipeDBNoFlattenParser :: O.Parser Bool
+ipeDBNoFlattenParser =
+  O.flag' False . mconcat $
+    [ O.long "no-flatten"
+    , O.hidden
+    , O.help "Do not flatten the lsm-tree database."
+    ]
 
 --------------------------------------------------------------------------------
 -- Query Options
@@ -392,7 +417,7 @@ decodeEventlog = \case
   EventlogEncodingGZip -> GZip.decompress
 
 --------------------------------------------------------------------------------
--- IpeDB
+-- database
 
 ipeDBOutputPathParser :: O.Parser FilePath
 ipeDBOutputPathParser =
@@ -401,7 +426,7 @@ ipeDBOutputPathParser =
     , O.long "output"
     , O.metavar "IPEDB_PATH"
     , O.completer (O.bashCompleter "file")
-    , O.help "The IpeDB output path."
+    , O.help "The database output path."
     ]
 
 ipeDBPathParser :: O.Parser FilePath
@@ -443,7 +468,7 @@ genericTableFormatParser mods =
   O.option (O.eitherReader readTableFormat) . mconcat $
     [ O.metavar "FORMAT"
     , O.completeWith ["lsm", "tar", "tgz"]
-    , O.help "The IpeDB table format (lsm, tar, tgz)."
+    , O.help "The database table format (lsm, tar, tgz)."
     , O.value def
     , mods
     ]

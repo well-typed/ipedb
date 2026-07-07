@@ -11,6 +11,7 @@ import Data.Default (Default (..))
 import Data.Foldable (for_)
 import Data.Machine ((~>))
 import Data.Machine qualified as M
+import Data.Maybe (fromMaybe)
 import Data.String (IsString (..))
 import Data.Vector qualified as V
 import Data.Version qualified as V (showVersion)
@@ -44,7 +45,8 @@ runIndex IndexOptions{..} = do
           fromHandle eventlogEncoding eventlogSourceHandle
             ~> decodeEvent
             ~> DB.indexer CC.toCostCentre def{DB.indexerBufferSize = bufferSize} table
-        DB.saveTable table ccDBOutputPath ccDBTableFormat
+        let saveOptions = def{DB.flatten = fromMaybe (shouldFlatten ccDBTableFormat) ccDBFlatten}
+        DB.saveTable saveOptions table ccDBOutputPath ccDBTableFormat
 
 --------------------------------------------------------------------------------
 -- Query
@@ -223,6 +225,7 @@ data IndexOptions = IndexOptions
   , eventlogEncoding :: EventlogEncoding
   , ccDBOutputPath :: !FilePath
   , ccDBTableFormat :: !DB.TableFormat
+  , ccDBFlatten :: !(Maybe Bool)
   , bufferSize :: !Word32
   }
 
@@ -239,7 +242,29 @@ indexOptionsParser =
     <*> eventlogEncodingParser
     <*> ccDBOutputPathParser
     <*> tableFormatParser
+    <*> O.optional (ccDBFlattenParser O.<|> ccDBNoFlattenParser)
     <*> indexBufferSizeParser
+
+shouldFlatten :: DB.TableFormat -> Bool
+shouldFlatten = \case
+  DB.LSMTreeSnapshotV2 -> False
+  DB.LSMTreeSnapshotV2Tar -> True
+  DB.LSMTreeSnapshotV2TarGz -> True
+
+ccDBFlattenParser :: O.Parser Bool
+ccDBFlattenParser =
+  O.flag' True . mconcat $
+    [ O.long "flatten"
+    , O.help "Flatten the lsm-tree database. This improves the speed of lookups. By default, this is disabled for the 'lsm' format and enabled for the 'tar' and 'tgz' formats."
+    ]
+
+ccDBNoFlattenParser :: O.Parser Bool
+ccDBNoFlattenParser =
+  O.flag' False . mconcat $
+    [ O.long "no-flatten"
+    , O.hidden
+    , O.help "Do not flatten the lsm-tree database."
+    ]
 
 --------------------------------------------------------------------------------
 -- Query Options
