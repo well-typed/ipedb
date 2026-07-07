@@ -1,6 +1,9 @@
 module Main (main) where
 
 import Codec.Compression.GZip qualified as GZip
+import Control.Applicative (asum)
+import Control.Exception (Exception (..), SomeException)
+import Control.Monad (unless)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -18,7 +21,7 @@ import IpeDB.Database qualified as DB
 import IpeDB.Types.InfoProv qualified as IP
 import Options.Applicative qualified as O
 import Paths_ipedb (version)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.IO qualified as IO
 
 main :: IO ()
@@ -27,6 +30,10 @@ main = do
     IndexCommand options -> runIndex options
     QueryCommand options -> runQuery options
     ListCommand options -> runList options
+    CheckCommand options -> runCheck options
+
+--------------------------------------------------------------------------------
+-- Index
 
 runIndex :: IndexOptions -> IO ()
 runIndex IndexOptions{..} = do
@@ -39,6 +46,9 @@ runIndex IndexOptions{..} = do
             ~> DB.indexer def{DB.indexerBufferSize = bufferSize} table
         DB.saveTable table ipeDBOutputPath ipeDBTableFormat
 
+--------------------------------------------------------------------------------
+-- Query
+
 runQuery :: QueryOptions -> IO ()
 runQuery QueryOptions{..} = do
   DB.withNewSession def $ \session ->
@@ -47,12 +57,109 @@ runQuery QueryOptions{..} = do
       for_ (zip infoProvIds infoProvs) $ \(ipId, ip) ->
         putStrLn $ show ipId <> ": " <> show ip
 
+--------------------------------------------------------------------------------
+-- List
+
 runList :: ListOptions -> IO ()
 runList ListOptions{..} = do
   DB.withNewSession def $ \session ->
     DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDBPath ipeDBTableFormat $ \table -> do
       DB.withIterator def{DB.iteratorBufferSize = bufferSize} table $ \iterator ->
         M.runT_ $ iterator ~> M.traversing (\(ipId, ip) -> putStrLn $ show ipId <> ": " <> show ip)
+
+--------------------------------------------------------------------------------
+-- Check
+
+data MissingInfoProvEntry = MissingInfoProvEntry
+  { table1Path :: !FilePath
+  , table2Path :: !FilePath
+  , infoProvId :: !IP.InfoProvId
+  }
+  deriving (Show)
+
+instance Exception MissingInfoProvEntry where
+  displayException :: MissingInfoProvEntry -> String
+  displayException = flip showsException ""
+   where
+    showsException :: MissingInfoProvEntry -> ShowS
+    showsException MissingInfoProvEntry{..} =
+      shows infoProvId <> showString ": missing in " <> showString table2Path
+
+data MismatchedInfoProvEntry = MismatchedInfoProvEntry
+  { table1Path :: !FilePath
+  , table2Path :: !FilePath
+  , infoProvId :: !IP.InfoProvId
+  , infoProv1 :: !IP.InfoProv
+  , infoProv2 :: !IP.InfoProv
+  }
+  deriving (Show)
+
+instance Exception MismatchedInfoProvEntry where
+  displayException :: MismatchedInfoProvEntry -> String
+  displayException = flip showsException ""
+   where
+    showsException :: MismatchedInfoProvEntry -> ShowS
+    showsException MismatchedInfoProvEntry{..} =
+      shows infoProvId <> showString ": mismatch between " <> showString table1Path <> showString " and " <> showString table2Path
+
+runCheck :: CheckOptions -> IO ()
+runCheck CheckOptions{..} = do
+  DB.withNewSession def $ \session ->
+    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDB1Path ipeDB1TableFormat $ \table1 ->
+      DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDB2Path ipeDB2TableFormat $ \table2 -> do
+        let runCheck' = \case
+              CheckSubset -> checkSubset
+              CheckEqual -> checkEqual
+        exceptionCount <- runCheck' check (ipeDB1Path, table1) (ipeDB2Path, table2)
+        unless (exceptionCount == 0) $
+          exitWith (ExitFailure exceptionCount)
+ where
+  checkEqual ::
+    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    IO Int
+  checkEqual table1Info table2Info = do
+    exceptionCount1 <- checkSubset' True table1Info table2Info
+    exceptionCount2 <- checkSubset' False table2Info table1Info
+    pure (exceptionCount1 + exceptionCount2)
+
+  checkSubset ::
+    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    IO Int
+  checkSubset = checkSubset' True
+
+  checkSubset' ::
+    Bool ->
+    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    IO Int
+  checkSubset' checkPresentAndEqual (table1Path, table1) (table2Path, table2) =
+    DB.withIterator def{DB.iteratorBufferSize = bufferSize} table1 $ \iterator1 -> do
+      fmap sum . M.runT $
+        iterator1
+          ~> M.buffered (fromIntegral bufferSize)
+          ~> M.traversing resolve
+          ~> M.asParts
+          ~> M.mapping assertEqual
+          ~> M.asParts
+          ~> M.traversing (\e -> IO.hPutStr IO.stderr (displayException e) >> pure (1 :: Int))
+   where
+    resolve :: [(IP.InfoProvId, IP.InfoProv)] -> IO [(IP.InfoProvId, IP.InfoProv, Maybe IP.InfoProv)]
+    resolve entries1 = do
+      maybeInfoProvs2 <- DB.lookups table2 (V.fromList (fst <$> entries1))
+      let addToEntry (infoProvId, infoProv1) maybeInfoProv2 = (infoProvId, infoProv1, maybeInfoProv2)
+      pure $ zipWith addToEntry entries1 (V.toList maybeInfoProvs2)
+
+    assertEqual :: (IP.InfoProvId, IP.InfoProv, Maybe IP.InfoProv) -> Maybe SomeException
+    assertEqual (infoProvId, infoProv1, maybeInfoProv2) =
+      case maybeInfoProv2 of
+        Nothing ->
+          Just $ toException MissingInfoProvEntry{..}
+        Just infoProv2
+          | checkPresentAndEqual && infoProv1 /= infoProv2 ->
+              Just $ toException MismatchedInfoProvEntry{..}
+          | otherwise -> Nothing
 
 --------------------------------------------------------------------------------
 -- Eventlog Processing
@@ -87,6 +194,7 @@ data IpeDBOptions
   = IndexCommand IndexOptions
   | QueryCommand QueryOptions
   | ListCommand ListOptions
+  | CheckCommand CheckOptions
 
 ipeDBOptionsParserInfo :: O.ParserInfo IpeDBOptions
 ipeDBOptionsParserInfo =
@@ -104,6 +212,7 @@ ipeDBOptionsParser =
     [ O.command "index" (IndexCommand <$> indexOptionsParserInfo)
     , O.command "query" (QueryCommand <$> queryOptionsParserInfo)
     , O.command "list" (ListCommand <$> listOptionsParserInfo)
+    , O.command "check" (CheckCommand <$> checkOptionsParserInfo)
     ]
 
 --------------------------------------------------------------------------------
@@ -175,6 +284,52 @@ listOptionsParser =
     <$> ipeDBPathParser
     <*> tableFormatParser
     <*> listBufferSizeParser
+
+--------------------------------------------------------------------------------
+-- Check Options
+
+data CheckOptions = CheckOptions
+  { check :: !Check
+  , ipeDB1Path :: !FilePath
+  , ipeDB1TableFormat :: !DB.TableFormat
+  , ipeDB2Path :: !FilePath
+  , ipeDB2TableFormat :: !DB.TableFormat
+  , bufferSize :: !Word32
+  }
+
+checkOptionsParserInfo :: O.ParserInfo CheckOptions
+checkOptionsParserInfo =
+  O.info (checkOptionsParser O.<**> O.helper) . mconcat $
+    [ O.progDesc "Compare two tables."
+    ]
+
+checkOptionsParser :: O.Parser CheckOptions
+checkOptionsParser =
+  CheckOptions
+    <$> checkParser
+    <*> ipeDBPathParser
+    <*> table1FormatParser
+    <*> ipeDBPathParser
+    <*> table2FormatParser
+    <*> listBufferSizeParser
+
+data Check
+  = CheckSubset
+  | CheckEqual
+
+checkParser :: O.Parser Check
+checkParser =
+  asum
+    [ O.flag' CheckSubset . mconcat $
+        [ O.long "check-subset"
+        , O.help "Check that the first table is a subset of the second table."
+        ]
+    , O.flag' CheckEqual . mconcat $
+        [ O.long "check-equal"
+        , O.help "Check that the first table and the second table are equal."
+        ]
+    , pure CheckEqual
+    ]
 
 --------------------------------------------------------------------------------
 -- Eventlog Source
@@ -268,13 +423,29 @@ readTableFormat = \case
 
 tableFormatParser :: O.Parser DB.TableFormat
 tableFormatParser =
-  O.option (O.eitherReader readTableFormat) . mconcat $
+  genericTableFormatParser . mconcat $
     [ O.short 't'
     , O.long "table-format"
-    , O.metavar "FORMAT"
+    ]
+
+table1FormatParser :: O.Parser DB.TableFormat
+table1FormatParser =
+  genericTableFormatParser $
+    O.long "table1-format"
+
+table2FormatParser :: O.Parser DB.TableFormat
+table2FormatParser =
+  genericTableFormatParser $
+    O.long "table2-format"
+
+genericTableFormatParser :: O.Mod O.OptionFields DB.TableFormat -> O.Parser DB.TableFormat
+genericTableFormatParser mods =
+  O.option (O.eitherReader readTableFormat) . mconcat $
+    [ O.metavar "FORMAT"
     , O.completeWith ["lsm", "tar", "tgz"]
     , O.help "The IpeDB table format (lsm, tar, tgz)."
     , O.value def
+    , mods
     ]
 
 --------------------------------------------------------------------------------
