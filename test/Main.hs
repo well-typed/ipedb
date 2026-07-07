@@ -37,7 +37,7 @@ testWith options =
       let ipedb = tempDir </> takeBaseName options.eventlog <.> options.tableFormat
 
       -- Create an IpeDB.
-      callProcess "ipedb" ["index", options.eventlog, "--eventlog-format=bgz", "--table-format=" <> options.tableFormat, "--output=" <> ipedb]
+      callProcess "ipedb" ["index", options.eventlog, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, "--output=" <> ipedb]
       assertBool ("Missing output " <> ipedb) =<< doesPathExist ipedb
 
       -- Count the number of entries in the IpeDB.
