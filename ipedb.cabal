@@ -121,6 +121,7 @@ executable ipedb
     machines >=0.7.4 && <0.8,
     optparse-applicative >=0.17 && <0.20,
     vector >=0.11 && <0.14,
+    zlib >=0.7 && <0.8,
 
 test-suite ipedb-test
   import: language

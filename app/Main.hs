@@ -1,5 +1,6 @@
 module Main (main) where
 
+import Codec.Compression.GZip qualified as GZip
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -33,7 +34,7 @@ runIndex IndexOptions{..} = do
     DB.withNewSession def $ \session ->
       DB.withNewTable @IP.InfoProvId @IP.InfoProv session def $ \table -> do
         M.runT_ $
-          fromHandle eventlogSourceHandle
+          fromHandle eventlogFormat eventlogSourceHandle
             ~> decodeEvent
             ~> DB.indexer def{DB.indexerBufferSize = bufferSize} table
         DB.saveTable table ipeDBOutputPath ipeDBTableFormat
@@ -60,10 +61,10 @@ runList ListOptions{..} = do
 {- |
 Stream a file as chunks.
 -}
-fromHandle :: IO.Handle -> M.SourceT IO BS.ByteString
-fromHandle h =
+fromHandle :: EventlogFormat -> IO.Handle -> M.SourceT IO BS.ByteString
+fromHandle eventlogFormat h =
   M.MachineT $ do
-    chunks <- liftIO (BSL.toChunks <$> BSL.hGetContents h)
+    chunks <- liftIO (BSL.toChunks . toBinaryEventlog eventlogFormat <$> BSL.hGetContents h)
     M.runMachineT $ M.source chunks
 
 {- |
@@ -110,6 +111,7 @@ ipeDBOptionsParser =
 
 data IndexOptions = IndexOptions
   { eventlogSource :: EventlogSource
+  , eventlogFormat :: EventlogFormat
   , ipeDBOutputPath :: !FilePath
   , ipeDBTableFormat :: !DB.TableFormat
   , bufferSize :: !Word32
@@ -125,6 +127,7 @@ indexOptionsParser :: O.Parser IndexOptions
 indexOptionsParser =
   IndexOptions
     <$> eventlogSourceParser
+    <*> eventlogFormatParser
     <*> ipeDBOutputPathParser
     <*> tableFormatParser
     <*> indexBufferSizeParser
@@ -203,6 +206,35 @@ withEventlogSource EventlogFromStdin action = do
       action IO.stdin
 withEventlogSource EventlogFromFile{..} action =
   IO.withBinaryFile file IO.ReadMode action
+
+--------------------------------------------------------------------------------
+-- Eventlog Format
+
+data EventlogFormat
+  = EventlogFormatBinary
+  | EventlogFormatBinaryGZip
+
+readEventlogFormat :: String -> Either String EventlogFormat
+readEventlogFormat = \case
+  "bin" -> Right EventlogFormatBinary
+  "bgz" -> Right EventlogFormatBinaryGZip
+  eventlogFormatString -> Left $! "Unknown eventlog format " <> eventlogFormatString
+
+eventlogFormatParser :: O.Parser EventlogFormat
+eventlogFormatParser =
+  O.option (O.eitherReader readEventlogFormat) . mconcat $
+    [ O.short 'e'
+    , O.long "eventlog-format"
+    , O.metavar "FORMAT"
+    , O.completeWith ["bin", "bgz"]
+    , O.help "The eventlog format (bin, bgz)."
+    , O.value EventlogFormatBinary
+    ]
+
+toBinaryEventlog :: EventlogFormat -> BSL.ByteString -> BSL.ByteString
+toBinaryEventlog = \case
+  EventlogFormatBinary -> id
+  EventlogFormatBinaryGZip -> GZip.decompress
 
 --------------------------------------------------------------------------------
 -- IpeDB

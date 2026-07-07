@@ -13,9 +13,9 @@ import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 main :: IO ()
 main = do
   defaultMain . testGroup "ipedb" $
-    [ testWith TestOptions{eventlog = dataDir </> "oddball.eventlog", tableFormat = "lsm"}
-    , testWith TestOptions{eventlog = dataDir </> "oddball.eventlog", tableFormat = "tar"}
-    , testWith TestOptions{eventlog = dataDir </> "oddball.eventlog", tableFormat = "tgz"}
+    [ testWith TestOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "lsm"}
+    , testWith TestOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tar"}
+    , testWith TestOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tgz"}
     ]
 
 dataDir :: FilePath
@@ -37,7 +37,7 @@ testWith options =
       let ipedb = tempDir </> takeBaseName options.eventlog <.> options.tableFormat
 
       -- Create an IpeDB.
-      callProcess "ipedb" ["index", options.eventlog, "--table-format=" <> options.tableFormat, "--output=" <> ipedb]
+      callProcess "ipedb" ["index", options.eventlog, "--eventlog-format=bgz", "--table-format=" <> options.tableFormat, "--output=" <> ipedb]
       assertBool ("Missing output " <> ipedb) =<< doesPathExist ipedb
 
       -- Count the number of entries in the IpeDB.
