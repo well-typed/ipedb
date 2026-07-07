@@ -338,9 +338,11 @@ withTableFrom session spec@LSMTreeTableSpec{} inputRelPath inputFormat action = 
         LSMTreeSnapshotV2TarGz -> loadLSMTreeSnapshotV2Tar GZip.decompress
 
   -- Load the snapshot.
-  bracket_ loadSnapshot (deleteSnapshot session.session snapshotName) $
+  bracketOnError loadSnapshot (\() -> deleteSnapshot session.session snapshotName) $ \() ->
     -- Open the table from the snapshot.
-    LSMT.withTableFromSnapshot session.session snapshotName snapshotLabel $ \table ->
+    LSMT.withTableFromSnapshot session.session snapshotName snapshotLabel $ \table -> do
+      -- Delete the snapshot.
+      deleteSnapshot session.session snapshotName
       -- Run the action.
       action LSMTreeTable{..}
 
