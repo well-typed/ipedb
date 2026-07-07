@@ -32,9 +32,9 @@ import Text.ParserCombinators.ReadP qualified as P
 The type of source location information.
 -}
 data SrcLoc = SrcLoc_
-  { srcFilePath :: !(Maybe FilePath)
-  -- ^ @srcFilePath@ should not be @Just ""@.
-  , srcRange :: !(Maybe Range)
+  { _srcFilePath :: !(Maybe FilePath)
+  -- ^ @srcFilePath_@ should not be @Just ""@.
+  , _srcRange :: !(Maybe Range)
   }
   deriving stock (Eq)
 
