@@ -1,4 +1,5 @@
 packages: ipedb.cabal
+packages: examples/fibber/fibber.cabal
 
 -- 2026-07-02:
 -- disable io_uring support in blockio
