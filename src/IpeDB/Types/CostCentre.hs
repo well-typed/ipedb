@@ -16,7 +16,7 @@ module IpeDB.Types.CostCentre (
 
 import Control.Exception (assert)
 import Data.Binary (Binary (..), Get, Put)
-import Data.Binary.Text (getTextUtf8, putTextUtf8)
+import Data.Binary.Text (getTextUTF8LEB128, putTextUTF8LEB128)
 import Data.Coerce (coerce)
 import Data.Default (Default (..))
 import Data.Either (fromRight, isRight)
@@ -106,16 +106,16 @@ deriving newtype instance Binary CostCentreId
 instance Binary CostCentre where
   get :: Get CostCentre
   get = do
-    ccLabel <- getTextUtf8
-    ccModule <- getTextUtf8
+    ccLabel <- getTextUTF8LEB128
+    ccModule <- getTextUTF8LEB128
     ccSrcLoc <- get
     ccIsCAF <- get
     pure CostCentre{..}
 
   put :: CostCentre -> Put
   put CostCentre{..} = do
-    putTextUtf8 ccLabel
-    putTextUtf8 ccModule
+    putTextUTF8LEB128 ccLabel
+    putTextUTF8LEB128 ccModule
     put ccSrcLoc
     put ccIsCAF
 

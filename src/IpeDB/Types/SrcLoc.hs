@@ -15,9 +15,8 @@ module IpeDB.Types.SrcLoc (
 
 import Codec.LEB128.Generic (decodeLEB128, encodeLEB128)
 import Data.Binary (Binary (..), Get, Put, getWord8, putWord8)
-import Data.Binary.Text (getTextUtf8, putTextUtf8)
+import Data.Binary.Text (getStringUTF8LEB128, putStringUTF8LEB128)
 import Data.Char (isDigit)
-import Data.Text qualified as T
 import Data.Word (Word32)
 import GHC.Records (HasField (..))
 import Text.ParserCombinators.ReadP (ReadP)
@@ -35,7 +34,6 @@ data SrcLoc = SrcLoc
   , srcRange :: !(Maybe Range)
   }
   deriving stock (Eq)
-
 
 {- |
 Simple constructor for unhelpful source locations.
@@ -233,7 +231,7 @@ Serialise source location information.
 -}
 putSrcLoc :: SrcLoc -> Put
 putSrcLoc SrcLoc{..} = do
-  putTextUtf8 . T.pack $ srcFilePath
+  putStringUTF8LEB128 srcFilePath
   putMaybeRange srcRange
 
 {- |
@@ -243,7 +241,7 @@ Deserialise source location information.
 -}
 getSrcLoc :: Get SrcLoc
 getSrcLoc = do
-  srcFilePath <- T.unpack <$> getTextUtf8
+  srcFilePath <- getStringUTF8LEB128
   srcRange <- getMaybeRange
   pure SrcLoc{..}
 
