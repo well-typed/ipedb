@@ -43,6 +43,7 @@ common language
   default-extensions:
     BangPatterns
     DataKinds
+    DeriveGeneric
     DerivingStrategies
     DerivingVia
     DuplicateRecordFields

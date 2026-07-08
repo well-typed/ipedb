@@ -27,10 +27,14 @@ import Data.Word (Word32)
 import Database.LSMTree qualified as LSMT
 import Foreign (toBool)
 import Foreign.C.Types (CBool (..))
+import GHC.Generics (Generic)
 import GHC.RTS.Events (Event)
 import GHC.RTS.Events qualified as E
 import IpeDB.Database qualified as DB
 import IpeDB.Types.SrcLoc (SrcLoc (..), parseSrcLoc)
+import Numeric (showHex)
+import Text.ParserCombinators.ReadP qualified as P
+import Text.Read.Lex (readHexP)
 
 {- |
 The type of cost-centre IDs.
@@ -38,7 +42,16 @@ The type of cost-centre IDs.
 newtype CostCentreId = CostCentreId
   { value :: Word32
   }
-  deriving newtype (Show, Eq, Ord, Hashable)
+  deriving newtype (Hashable, Num)
+  deriving stock (Generic, Eq, Ord)
+
+instance Show CostCentreId where
+  showsPrec :: Int -> CostCentreId -> ShowS
+  showsPrec _ (CostCentreId ipId) = showString "0x" . showHex ipId
+
+instance Read CostCentreId where
+  readsPrec :: Int -> ReadS CostCentreId
+  readsPrec _ = P.readP_to_S (CostCentreId <$> (P.string "0x" *> readHexP))
 
 {- |
 The type of a cost-centre entry, as produced by the `GHC.RTS.Events.HeapProfCostCentre` event.
@@ -49,7 +62,7 @@ data CostCentre = CostCentre
   , ccSrcLoc :: !SrcLoc
   , ccIsCAF :: !Bool
   }
-  deriving stock (Show, Eq)
+  deriving stock (Generic, Eq, Ord, Show, Read)
 
 {- |
 Extract a `CostCentre` from a @ghc-events@ `Event`.
