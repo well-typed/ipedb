@@ -17,7 +17,6 @@ import Codec.LEB128.Generic (decodeLEB128, encodeLEB128)
 import Data.Binary (Binary (..), Get, Put, getWord8, putWord8)
 import Data.Binary.Text (getTextUtf8, putTextUtf8)
 import Data.Char (isDigit)
-import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Word (Word32)
 import GHC.Records (HasField (..))
@@ -31,37 +30,18 @@ import Text.ParserCombinators.ReadP qualified as P
 {- |
 The type of source location information.
 -}
-data SrcLoc = SrcLoc_
-  { _srcFilePath :: !(Maybe FilePath)
-  -- ^ @srcFilePath_@ should not be @Just ""@.
-  , _srcRange :: !(Maybe Range)
+data SrcLoc = SrcLoc
+  { srcFilePath :: !FilePath
+  , srcRange :: !(Maybe Range)
   }
   deriving stock (Eq)
 
-{- |
-Internal helper.
-
-Smart constructor for `SrcLoc`.
--}
-toSrcLoc :: Maybe FilePath -> Maybe Range -> SrcLoc
-toSrcLoc srcFilePath =
-  SrcLoc_ (if srcFilePath == Just "" then Nothing else srcFilePath)
-
-{- |
-Smart constructor for `SrcLoc` that ensures that `srcFilePath` is not @Just ""@.
--}
-pattern SrcLoc :: Maybe FilePath -> Maybe Range -> SrcLoc
-pattern SrcLoc{srcFilePath, srcRange} <- SrcLoc_ srcFilePath srcRange
-  where
-    SrcLoc srcFilePath srcRange = toSrcLoc srcFilePath srcRange
-
-{-# COMPLETE SrcLoc #-}
 
 {- |
 Simple constructor for unhelpful source locations.
 -}
 pattern UnhelpfulSrcLoc :: SrcLoc
-pattern UnhelpfulSrcLoc = SrcLoc_ Nothing Nothing
+pattern UnhelpfulSrcLoc = SrcLoc "" Nothing
 
 instance Show SrcLoc where
   showsPrec :: Int -> SrcLoc -> ShowS
@@ -82,7 +62,7 @@ Pretty-printer for GHC source location information
 -}
 ppSrcLoc :: SrcLoc -> ShowS
 ppSrcLoc SrcLoc{..} =
-  maybe mempty showString srcFilePath . showString ":" . maybe mempty ppRange srcRange
+  showString srcFilePath . showString ":" . maybe mempty ppRange srcRange
 
 {- |
 Parser for GHC source location information.
@@ -96,8 +76,8 @@ pSrcLoc = SrcLoc <$> pSrcFilePath <* P.char ':' <*> pSrcRange
   --       the source range, since the filepath and the range are separated
   --       by a colon, but filepaths may contain any number of colons and
   --       ranges may contain either zero or one colon.
-  pSrcFilePath :: ReadP (Maybe FilePath)
-  pSrcFilePath = Just <$> P.many P.get
+  pSrcFilePath :: ReadP FilePath
+  pSrcFilePath = P.many P.get
 
   pSrcRange :: ReadP (Maybe Range)
   pSrcRange = (Just <$> pRange) P.<++ (Nothing <$ P.eof)
@@ -253,7 +233,7 @@ Serialise source location information.
 -}
 putSrcLoc :: SrcLoc -> Put
 putSrcLoc SrcLoc{..} = do
-  putTextUtf8 . T.pack . fromMaybe "" $ srcFilePath
+  putTextUtf8 . T.pack $ srcFilePath
   putMaybeRange srcRange
 
 {- |
@@ -263,7 +243,7 @@ Deserialise source location information.
 -}
 getSrcLoc :: Get SrcLoc
 getSrcLoc = do
-  srcFilePath <- Just . T.unpack <$> getTextUtf8
+  srcFilePath <- T.unpack <$> getTextUtf8
   srcRange <- getMaybeRange
   pure SrcLoc{..}
 
