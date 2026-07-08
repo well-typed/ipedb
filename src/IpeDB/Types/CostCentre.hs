@@ -89,15 +89,19 @@ toCostCentre ev
 {- |
 Default `DB.TableSpec` for CostCentre tables.
 -}
-defaultCostCentreLSMTreeTableSpec :: DB.TableSpec CostCentreId CostCentre
+defaultCostCentreLSMTreeTableSpec :: DB.TableSpec DB.LSMTree CostCentreId CostCentre
 defaultCostCentreLSMTreeTableSpec =
   DB.LSMTreeTableSpec
-    { name = "cost-centre-table"
-    , label = "CostCentreId->CostCentre"
+    { lsmTreeTableName = "cost-centre-table"
+    , lsmTreeTableLabel = "CostCentreId->CostCentre"
     }
 
-instance Default (DB.TableSpec CostCentreId CostCentre) where
-  def :: DB.TableSpec CostCentreId CostCentre
+instance Default (DB.TableSpec DB.InMemory CostCentreId CostCentre) where
+  def :: DB.TableSpec DB.InMemory CostCentreId CostCentre
+  def = DB.InMemoryTableSpec{}
+
+instance Default (DB.TableSpec DB.LSMTree CostCentreId CostCentre) where
+  def :: DB.TableSpec DB.LSMTree CostCentreId CostCentre
   def = defaultCostCentreLSMTreeTableSpec
 
 {- |

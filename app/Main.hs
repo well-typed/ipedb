@@ -39,7 +39,7 @@ runIndex :: IndexOptions -> IO ()
 runIndex IndexOptions{..} = do
   withEventlogSource eventlogSource $ \eventlogSourceHandle -> do
     DB.withNewSession def $ \session ->
-      DB.withNewTable @IP.InfoProvId @IP.InfoProv session def $ \table -> do
+      DB.withNewTable @DB.LSMTree @IP.InfoProvId @IP.InfoProv session def $ \table -> do
         M.runT_ $
           fromHandle eventlogEncoding eventlogSourceHandle
             ~> decodeEvent
@@ -52,7 +52,7 @@ runIndex IndexOptions{..} = do
 runQuery :: QueryOptions -> IO ()
 runQuery QueryOptions{..} = do
   DB.withNewSession def $ \session ->
-    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDBPath ipeDBTableFormat $ \table -> do
+    DB.withTableFrom @DB.LSMTree @IP.InfoProvId @IP.InfoProv session def ipeDBPath ipeDBTableFormat $ \table -> do
       infoProvs <- fmap V.toList . DB.lookups table . V.fromList $ infoProvIds
       for_ (zip infoProvIds infoProvs) $ \(ipId, ip) ->
         putStrLn $ show ipId <> ": " <> show ip
@@ -63,7 +63,7 @@ runQuery QueryOptions{..} = do
 runList :: ListOptions -> IO ()
 runList ListOptions{..} = do
   DB.withNewSession def $ \session ->
-    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDBPath ipeDBTableFormat $ \table -> do
+    DB.withTableFrom @DB.LSMTree @IP.InfoProvId @IP.InfoProv session def ipeDBPath ipeDBTableFormat $ \table -> do
       DB.withIterator def{DB.iteratorBufferSize = bufferSize} table $ \iterator ->
         M.runT_ $ iterator ~> M.traversing (\(ipId, ip) -> putStrLn $ show ipId <> ": " <> show ip)
 
@@ -105,8 +105,8 @@ instance Exception MismatchedInfoProvEntry where
 runCheck :: CheckOptions -> IO ()
 runCheck CheckOptions{..} = do
   DB.withNewSession def $ \session ->
-    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDB1Path ipeDB1TableFormat $ \table1 ->
-      DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDB2Path ipeDB2TableFormat $ \table2 -> do
+    DB.withTableFrom @DB.LSMTree @IP.InfoProvId @IP.InfoProv session def ipeDB1Path ipeDB1TableFormat $ \table1 ->
+      DB.withTableFrom @DB.LSMTree @IP.InfoProvId @IP.InfoProv session def ipeDB2Path ipeDB2TableFormat $ \table2 -> do
         let runCheck' = \case
               CheckSubset -> checkSubset
               CheckEqual -> checkEqual
@@ -115,8 +115,8 @@ runCheck CheckOptions{..} = do
           exitWith (ExitFailure exceptionCount)
  where
   checkEqual ::
-    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
-    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table DB.LSMTree IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table DB.LSMTree IP.InfoProvId IP.InfoProv) ->
     IO Int
   checkEqual table1Info table2Info = do
     exceptionCount1 <- checkSubset' True table1Info table2Info
@@ -124,15 +124,15 @@ runCheck CheckOptions{..} = do
     pure (exceptionCount1 + exceptionCount2)
 
   checkSubset ::
-    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
-    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table DB.LSMTree IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table DB.LSMTree IP.InfoProvId IP.InfoProv) ->
     IO Int
   checkSubset = checkSubset' True
 
   checkSubset' ::
     Bool ->
-    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
-    (FilePath, DB.Table IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table DB.LSMTree IP.InfoProvId IP.InfoProv) ->
+    (FilePath, DB.Table DB.LSMTree IP.InfoProvId IP.InfoProv) ->
     IO Int
   checkSubset' checkPresentAndEqual (table1Path, table1) (table2Path, table2) =
     DB.withIterator def{DB.iteratorBufferSize = bufferSize} table1 $ \iterator1 -> do
@@ -222,7 +222,7 @@ data IndexOptions = IndexOptions
   { eventlogSource :: EventlogSource
   , eventlogEncoding :: EventlogEncoding
   , ipeDBOutputPath :: !FilePath
-  , ipeDBTableFormat :: !DB.TableFormat
+  , ipeDBTableFormat :: !(DB.TableFormat DB.LSMTree)
   , bufferSize :: !Word32
   }
 
@@ -246,7 +246,7 @@ indexOptionsParser =
 
 data QueryOptions = QueryOptions
   { ipeDBPath :: !FilePath
-  , ipeDBTableFormat :: !DB.TableFormat
+  , ipeDBTableFormat :: !(DB.TableFormat DB.LSMTree)
   , infoProvIds :: ![IP.InfoProvId]
   }
 
@@ -268,7 +268,7 @@ queryOptionsParser =
 
 data ListOptions = ListOptions
   { ipeDBPath :: !FilePath
-  , ipeDBTableFormat :: !DB.TableFormat
+  , ipeDBTableFormat :: !(DB.TableFormat DB.LSMTree)
   , bufferSize :: !Word32
   }
 
@@ -291,9 +291,9 @@ listOptionsParser =
 data CheckOptions = CheckOptions
   { check :: !Check
   , ipeDB1Path :: !FilePath
-  , ipeDB1TableFormat :: !DB.TableFormat
+  , ipeDB1TableFormat :: !(DB.TableFormat DB.LSMTree)
   , ipeDB2Path :: !FilePath
-  , ipeDB2TableFormat :: !DB.TableFormat
+  , ipeDB2TableFormat :: !(DB.TableFormat DB.LSMTree)
   , bufferSize :: !Word32
   }
 
@@ -414,31 +414,31 @@ ipeDBPathParser =
 --------------------------------------------------------------------------------
 -- TableFormat
 
-readTableFormat :: String -> Either String DB.TableFormat
+readTableFormat :: String -> Either String (DB.TableFormat DB.LSMTree)
 readTableFormat = \case
   "lsm" -> Right DB.LSMTreeSnapshotV2
   "tar" -> Right DB.LSMTreeSnapshotV2Tar
   "tgz" -> Right DB.LSMTreeSnapshotV2TarGz
   tableFormatString -> Left $! "Unknown table format " <> tableFormatString
 
-tableFormatParser :: O.Parser DB.TableFormat
+tableFormatParser :: O.Parser (DB.TableFormat DB.LSMTree)
 tableFormatParser =
   genericTableFormatParser . mconcat $
     [ O.short 't'
     , O.long "table-format"
     ]
 
-table1FormatParser :: O.Parser DB.TableFormat
+table1FormatParser :: O.Parser (DB.TableFormat DB.LSMTree)
 table1FormatParser =
   genericTableFormatParser $
     O.long "table1-format"
 
-table2FormatParser :: O.Parser DB.TableFormat
+table2FormatParser :: O.Parser (DB.TableFormat DB.LSMTree)
 table2FormatParser =
   genericTableFormatParser $
     O.long "table2-format"
 
-genericTableFormatParser :: O.Mod O.OptionFields DB.TableFormat -> O.Parser DB.TableFormat
+genericTableFormatParser :: O.Mod O.OptionFields (DB.TableFormat DB.LSMTree) -> O.Parser (DB.TableFormat DB.LSMTree)
 genericTableFormatParser mods =
   O.option (O.eitherReader readTableFormat) . mconcat $
     [ O.metavar "FORMAT"

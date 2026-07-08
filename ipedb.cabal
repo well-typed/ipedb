@@ -47,11 +47,13 @@ common language
     DerivingStrategies
     DerivingVia
     DuplicateRecordFields
+    EmptyCase
     FlexibleInstances
     GADTs
     GeneralizedNewtypeDeriving
     ImportQualifiedPost
     InstanceSigs
+    KindSignatures
     LambdaCase
     NoFieldSelectors
     OverloadedRecordDot
@@ -61,6 +63,7 @@ common language
     ScopedTypeVariables
     StandaloneDeriving
     TypeApplications
+    TypeData
     ViewPatterns
 
 library
@@ -94,6 +97,7 @@ library
     tar >=0.7 && <0.8,
     temporary >=1.1 && <1.4,
     text >=1.2 && <2.2,
+    unordered-containers >=0.1 && <0.3,
     vector >=0.11 && <0.14,
     zlib >=0.7 && <0.8,
 

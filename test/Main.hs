@@ -2,7 +2,7 @@
 
 module Main (main) where
 
-import GHC.Records
+import GHC.Records (HasField (..))
 import System.Directory (doesPathExist)
 import System.FilePath (replaceExtensions, takeFileName, (</>))
 import System.IO.Temp (withSystemTempDirectory)

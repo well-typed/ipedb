@@ -84,15 +84,19 @@ toInfoProv ev
 {- |
 Default `DB.TableSpec` for CostCentre tables.
 -}
-defaultInfoProvLSMTreeTableSpec :: DB.TableSpec InfoProvId InfoProv
+defaultInfoProvLSMTreeTableSpec :: DB.TableSpec DB.LSMTree InfoProvId InfoProv
 defaultInfoProvLSMTreeTableSpec =
   DB.LSMTreeTableSpec
-    { name = "info-prov-table"
-    , label = "InfoProvId->InfoProv"
+    { lsmTreeTableName = "info-prov-table"
+    , lsmTreeTableLabel = "InfoProvId->InfoProv"
     }
 
-instance Default (DB.TableSpec InfoProvId InfoProv) where
-  def :: DB.TableSpec InfoProvId InfoProv
+instance Default (DB.TableSpec DB.InMemory InfoProvId InfoProv) where
+  def :: DB.TableSpec DB.InMemory InfoProvId InfoProv
+  def = DB.InMemoryTableSpec{}
+
+instance Default (DB.TableSpec DB.LSMTree InfoProvId InfoProv) where
+  def :: DB.TableSpec DB.LSMTree InfoProvId InfoProv
   def = defaultInfoProvLSMTreeTableSpec
 
 {- |
