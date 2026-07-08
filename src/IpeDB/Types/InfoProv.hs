@@ -14,7 +14,7 @@ module IpeDB.Types.InfoProv (
 
 import Control.Exception (assert)
 import Data.Binary (Binary (..), Get, Put)
-import Data.Binary.Text (getTextUtf8, putTextUtf8)
+import Data.Binary.Text (getTextUTF8LEB128, putTextUTF8LEB128)
 import Data.Default (Default (..))
 import Data.Either (fromRight, isRight)
 import Data.Hashable (Hashable)
@@ -112,21 +112,21 @@ deriving newtype instance Binary InfoProvId
 instance Binary InfoProv where
   get :: Get InfoProv
   get = do
-    ipName <- getTextUtf8
+    ipName <- getTextUTF8LEB128
     ipClosureDesc <- get
-    ipTyDesc <- getTextUtf8
-    ipLabel <- getTextUtf8
-    ipModule <- getTextUtf8
+    ipTyDesc <- getTextUTF8LEB128
+    ipLabel <- getTextUTF8LEB128
+    ipModule <- getTextUTF8LEB128
     ipSrcLoc <- get
     pure InfoProv{..}
 
   put :: InfoProv -> Put
   put InfoProv{..} = do
-    putTextUtf8 ipName
+    putTextUTF8LEB128 ipName
     put ipClosureDesc
-    putTextUtf8 ipTyDesc
-    putTextUtf8 ipLabel
-    putTextUtf8 ipModule
+    putTextUTF8LEB128 ipTyDesc
+    putTextUTF8LEB128 ipLabel
+    putTextUTF8LEB128 ipModule
     put ipSrcLoc
 
 --------------------------------------------------------------------------------
