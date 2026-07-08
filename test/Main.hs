@@ -57,7 +57,7 @@ testWith options =
             \ipLabel = \"main\", \
             \ipModule = \"Main\", \
             \ipSrcLoc = SrcLoc {\
-            \srcFilePath = Just \"app/Main.hs\", \
+            \srcFilePath = \"app/Main.hs\", \
             \srcRange = Just (Range'MultiLine {line = 13, column = 1, endLine = 16, endColumn = 11})}})\n"
       actualEntry <- readProcess "ipedb" ["query", ipedb, "--table-format=" <> options.tableFormat, "0x100000000"] ""
       assertEqual ("IpeDB " <> ipedb <> " contains wrong entry for 0x100000000.") expectedEntry actualEntry
