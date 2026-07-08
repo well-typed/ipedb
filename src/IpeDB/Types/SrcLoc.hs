@@ -18,6 +18,7 @@ import Data.Binary (Binary (..), Get, Put, getWord8, putWord8)
 import Data.Binary.Text (getStringUTF8LEB128, putStringUTF8LEB128)
 import Data.Char (isDigit)
 import Data.Word (Word32)
+import GHC.Generics (Generic)
 import GHC.Records (HasField (..))
 import Text.ParserCombinators.ReadP (ReadP)
 import Text.ParserCombinators.ReadP qualified as P
@@ -33,27 +34,13 @@ data SrcLoc = SrcLoc
   { srcFilePath :: !FilePath
   , srcRange :: !(Maybe Range)
   }
-  deriving stock (Eq)
+  deriving stock (Generic, Eq, Ord, Show, Read)
 
 {- |
 Simple constructor for unhelpful source locations.
 -}
 pattern UnhelpfulSrcLoc :: SrcLoc
 pattern UnhelpfulSrcLoc = SrcLoc "" Nothing
-
-instance Show SrcLoc where
-  showsPrec :: Int -> SrcLoc -> ShowS
-  showsPrec _ UnhelpfulSrcLoc =
-    showString "UnhelpfulSrcLoc"
-  showsPrec p (SrcLoc srcFilePath srcRange) =
-    showParen (p >= 11) $
-      showString "SrcLoc {"
-        . showString "srcFilePath = "
-        . shows srcFilePath
-        . showString ", "
-        . showString "srcRange = "
-        . shows srcRange
-        . showString "}"
 
 {- |
 Pretty-printer for GHC source location information
@@ -102,7 +89,7 @@ data Point
   { line :: !Word32
   , column :: !Word32
   }
-  deriving (Eq, Ord)
+  deriving stock (Generic, Eq, Ord, Show, Read)
 
 {- |
 A range in a source file.
@@ -123,7 +110,7 @@ data Range
       , endLine :: !Word32
       , endColumn :: !Word32
       }
-  deriving stock (Eq, Show)
+  deriving stock (Generic, Eq, Ord, Show, Read)
 
 {- |
 Smart constructor for ranges.

@@ -22,6 +22,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Word (Word64)
 import Database.LSMTree qualified as LSMT
+import GHC.Generics (Generic)
 import GHC.RTS.Events (Event)
 import GHC.RTS.Events qualified as E
 import IpeDB.Database qualified as DB
@@ -34,7 +35,8 @@ import Text.Read.Lex (readHexP)
 The type of info table provenance IDs.
 -}
 newtype InfoProvId = InfoProvId Word64
-  deriving newtype (Eq, Hashable, Ord)
+  deriving newtype (Hashable, Num)
+  deriving stock (Generic, Eq, Ord)
 
 instance Show InfoProvId where
   showsPrec :: Int -> InfoProvId -> ShowS
@@ -55,7 +57,7 @@ data InfoProv = InfoProv
   , ipModule :: !Text
   , ipSrcLoc :: !SrcLoc
   }
-  deriving (Show, Eq)
+  deriving stock (Generic, Eq, Ord, Show, Read)
 
 {- |
 Extract an `InfoProv` from a @ghc-events@ `Event`.
