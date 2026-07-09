@@ -3,6 +3,7 @@
 module Main (main) where
 
 import GHC.Records
+import IpeDB.Types.SrcLoc (Range (..), SrcLoc (..), parseRange, parseSrcLoc)
 import System.Directory (doesPathExist)
 import System.FilePath (replaceExtensions, takeFileName, (</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -12,30 +13,48 @@ import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 
 main :: IO ()
 main = do
-  defaultMain . testGroup "ipedb" $
-    [ testWith TestOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "lsm"}
-    , testWith TestOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tar"}
-    , testWith TestOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tgz"}
-    , testEqualWith TestEqualOptions{eventlog1 = dataDir </> "fibber-1.eventlog.gz", eventlog2 = dataDir </> "fibber-2.eventlog.gz", tableFormat = "tgz"}
+  defaultMain . testGroup "Tests" $
+    [ testGroup "IpeDB" $
+        [ testIndexWith TestIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "lsm"}
+        , testIndexWith TestIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tar"}
+        , testIndexWith TestIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tgz"}
+        , testEqualWith TestEqualOptions{eventlog1 = dataDir </> "fibber-1.eventlog.gz", eventlog2 = dataDir </> "fibber-2.eventlog.gz", tableFormat = "tgz"}
+        ]
+    , testGroup "SrcLoc" $
+        [ testSrcLoc str maybeSrcLoc
+        | (str, maybeSrcLoc) <- srcLocGolden
+        ]
+    , testGroup "Range" $
+        [ testRange str maybeRange
+        | (str, maybeRange) <- rangeGolden
+        ]
     ]
+
+--------------------------------------------------------------------------------
+-- IpeDB
+--------------------------------------------------------------------------------
 
 dataDir :: FilePath
 dataDir = "test" </> "data"
 
---------------------------------------------------------------------------------
--- Test indexing
+-- | Get an IpeDB filename from an eventlog filename.
+toIpeDBPath :: FilePath -> String -> FilePath
+toIpeDBPath eventlog = replaceExtensions (takeFileName eventlog)
 
-data TestOptions = TestOptions
+--------------------------------------------------------------------------------
+-- IpeDB Indexer
+
+data TestIndexOptions = TestIndexOptions
   { eventlog :: FilePath
   , tableFormat :: String
   }
 
-instance HasField "testName" TestOptions TestName where
-  getField :: TestOptions -> TestName
+instance HasField "testName" TestIndexOptions TestName where
+  getField :: TestIndexOptions -> TestName
   getField options = toIpeDBPath options.eventlog options.tableFormat
 
-testWith :: TestOptions -> TestTree
-testWith options =
+testIndexWith :: TestIndexOptions -> TestTree
+testIndexWith options =
   testCase options.testName $ do
     withSystemTempDirectory ("ipedb-test-" <> options.testName) $ \tempDir -> do
       let ipedb = tempDir </> toIpeDBPath options.eventlog options.tableFormat
@@ -63,7 +82,7 @@ testWith options =
       assertEqual ("IpeDB " <> ipedb <> " contains wrong entry for 0x100000000.") expectedEntry actualEntry
 
 --------------------------------------------------------------------------------
--- Test stability
+-- IpeDB Stability
 
 data TestEqualOptions = TestEqualOptions
   { eventlog1 :: FilePath
@@ -99,7 +118,71 @@ testEqualWith options =
       callProcess "ipedb" ["check", ipedb1, ipedb2]
 
 --------------------------------------------------------------------------------
--- Internal Helpers
+-- SrcLoc
+--------------------------------------------------------------------------------
 
-toIpeDBPath :: FilePath -> String -> FilePath
-toIpeDBPath eventlog = replaceExtensions (takeFileName eventlog)
+srcLocGolden :: [(String, Maybe SrcLoc)]
+srcLocGolden =
+  [ -- Empty String
+    "" |-> Nothing
+  , -- Empty SrcLoc
+    ":" |-> Just UnhelpfulSrcLoc
+  , -- With srcRange = Nothing
+    "/path/to/My/Haskell/Module.hs:"
+      |-> Just SrcLoc{srcFilePath = "/path/to/My/Haskell/Module.hs", srcRange = Nothing}
+  , "C:\\path\\to\\My\\Haskell\\Module.hs:"
+      |-> Just SrcLoc{srcFilePath = "C:\\path\\to\\My\\Haskell\\Module.hs", srcRange = Nothing}
+  , "/i/am/sneaky/:/::/:::"
+      |-> Just SrcLoc{srcFilePath = "/i/am/sneaky/:/::/::", srcRange = Nothing}
+  , -- With srcRange = Just Range'Point{line = 1, column = 256}
+    "/path/to/My/Haskell/Module.hs:1:256"
+      |-> Just SrcLoc{srcFilePath = "/path/to/My/Haskell/Module.hs", srcRange = Just Range'Point{line = 1, column = 256}}
+  , "C:\\path\\to\\My\\Haskell\\Module.hs:1:256"
+      |-> Just SrcLoc{srcFilePath = "C:\\path\\to\\My\\Haskell\\Module.hs", srcRange = Just Range'Point{line = 1, column = 256}}
+  , "/i/am/sneaky/:/::/:::1:256"
+      |-> Just SrcLoc{srcFilePath = "/i/am/sneaky/:/::/::", srcRange = Just Range'Point{line = 1, column = 256}}
+  , -- With srcRange = Just Range'OneLine {line = 1, column = 3, endColumn = 256}
+    "/path/to/My/Haskell/Module.hs:1:3-256"
+      |-> Just SrcLoc{srcFilePath = "/path/to/My/Haskell/Module.hs", srcRange = Just Range'OneLine{line = 1, column = 3, endColumn = 256}}
+  , "C:\\path\\to\\My\\Haskell\\Module.hs:1:3-256"
+      |-> Just SrcLoc{srcFilePath = "C:\\path\\to\\My\\Haskell\\Module.hs", srcRange = Just Range'OneLine{line = 1, column = 3, endColumn = 256}}
+  , "/i/am/sneaky/:/::/:::1:3-256"
+      |-> Just SrcLoc{srcFilePath = "/i/am/sneaky/:/::/::", srcRange = Just Range'OneLine{line = 1, column = 3, endColumn = 256}}
+  , -- With srcRange = Just Range'MultiLine {line = 1, column = 4, endLine = 3, endColumn = 256}
+    "/path/to/My/Haskell/Module.hs:(1,4)-(3,256)"
+      |-> Just SrcLoc{srcFilePath = "/path/to/My/Haskell/Module.hs", srcRange = Just Range'MultiLine{line = 1, column = 4, endLine = 3, endColumn = 256}}
+  , "C:\\path\\to\\My\\Haskell\\Module.hs:(1,4)-(3,256)"
+      |-> Just SrcLoc{srcFilePath = "C:\\path\\to\\My\\Haskell\\Module.hs", srcRange = Just Range'MultiLine{line = 1, column = 4, endLine = 3, endColumn = 256}}
+  , "/i/am/sneaky/:/::/:::(1,4)-(3,256)"
+      |-> Just SrcLoc{srcFilePath = "/i/am/sneaky/:/::/::", srcRange = Just Range'MultiLine{line = 1, column = 4, endLine = 3, endColumn = 256}}
+  ]
+ where
+  (|->) = (,)
+
+testSrcLoc :: String -> Maybe SrcLoc -> TestTree
+testSrcLoc str expect =
+  testCase ("parseSrcLoc " <> show str) $ do
+    let errMsg = "parseSrcLoc returned incorrect result for '" <> str <> "'"
+    let actual = either (const Nothing) Just (parseSrcLoc str)
+    assertEqual errMsg expect actual
+
+--------------------------------------------------------------------------------
+-- Range
+--------------------------------------------------------------------------------
+
+rangeGolden :: [(String, Maybe Range)]
+rangeGolden =
+  [ "" |-> Nothing
+  , "1:256" |-> Just Range'Point{line = 1, column = 256}
+  , "1:3-256" |-> Just Range'OneLine{line = 1, column = 3, endColumn = 256}
+  , "(1,4)-(3,256)" |-> Just Range'MultiLine{line = 1, column = 4, endLine = 3, endColumn = 256}
+  ]
+ where
+  (|->) = (,)
+
+testRange :: String -> Maybe Range -> TestTree
+testRange str expect =
+  testCase ("parseRange " <> show str) $ do
+    let errMsg = "parseRange returned incorrect result for '" <> str <> "'"
+    let actual = either (const Nothing) Just (parseRange str)
+    assertEqual errMsg expect actual
