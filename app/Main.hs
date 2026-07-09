@@ -17,7 +17,7 @@ import Data.Version qualified as V (showVersion)
 import Data.Word (Word32)
 import GHC.RTS.Events (Event)
 import GHC.RTS.Events.Incremental (Decoder (..), decodeEventLog)
-import IpeDB.Database qualified as DB
+import IpeDB.Database.LSMTree qualified as DB
 import IpeDB.Types.InfoProv qualified as IP
 import Options.Applicative qualified as O
 import Paths_ipedb (version)
@@ -43,7 +43,7 @@ runIndex IndexOptions{..} = do
         M.runT_ $
           fromHandle eventlogEncoding eventlogSourceHandle
             ~> decodeEvent
-            ~> DB.indexer def{DB.indexerBufferSize = bufferSize} table
+            ~> DB.indexer IP.toInfoProv def{DB.indexerBufferSize = bufferSize} table
         DB.saveTable table ipeDBOutputPath ipeDBTableFormat
 
 --------------------------------------------------------------------------------
@@ -52,7 +52,7 @@ runIndex IndexOptions{..} = do
 runQuery :: QueryOptions -> IO ()
 runQuery QueryOptions{..} = do
   DB.withNewSession def $ \session ->
-    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDBPath ipeDBTableFormat $ \table -> do
+    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session ipeDBPath ipeDBTableFormat $ \table -> do
       infoProvs <- fmap V.toList . DB.lookups table . V.fromList $ infoProvIds
       for_ (zip infoProvIds infoProvs) $ \(ipId, ip) ->
         putStrLn $ show ipId <> ": " <> show ip
@@ -63,7 +63,7 @@ runQuery QueryOptions{..} = do
 runList :: ListOptions -> IO ()
 runList ListOptions{..} = do
   DB.withNewSession def $ \session ->
-    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDBPath ipeDBTableFormat $ \table -> do
+    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session ipeDBPath ipeDBTableFormat $ \table -> do
       DB.withIterator def{DB.iteratorBufferSize = bufferSize} table $ \iterator ->
         M.runT_ $ iterator ~> M.traversing (\(ipId, ip) -> putStrLn $ show ipId <> ": " <> show ip)
 
@@ -105,8 +105,8 @@ instance Exception MismatchedInfoProvEntry where
 runCheck :: CheckOptions -> IO ()
 runCheck CheckOptions{..} = do
   DB.withNewSession def $ \session ->
-    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDB1Path ipeDB1TableFormat $ \table1 ->
-      DB.withTableFrom @IP.InfoProvId @IP.InfoProv session def ipeDB2Path ipeDB2TableFormat $ \table2 -> do
+    DB.withTableFrom @IP.InfoProvId @IP.InfoProv session ipeDB1Path ipeDB1TableFormat $ \table1 ->
+      DB.withTableFrom @IP.InfoProvId @IP.InfoProv session ipeDB2Path ipeDB2TableFormat $ \table2 -> do
         let runCheck' = \case
               CheckSubset -> checkSubset
               CheckEqual -> checkEqual
@@ -455,7 +455,7 @@ indexBufferSizeParser :: O.Parser Word32
 indexBufferSizeParser =
   bufferSizeParser . mconcat $
     [ O.help "The size of the index buffer in number of elements."
-    , O.value IP.defaultInfoProvIndexerOptions.indexerBufferSize
+    , O.value DB.defaultIndexerOptions.indexerBufferSize
     ]
 
 listBufferSizeParser :: O.Parser Word32

@@ -8,14 +8,11 @@ module IpeDB.Types.InfoProv (
   InfoProvId (..),
   InfoProv (..),
   toInfoProv,
-  defaultInfoProvLSMTreeTableSpec,
-  defaultInfoProvIndexerOptions,
 ) where
 
 import Control.Exception (assert)
 import Data.Binary (Binary (..), Get, Put)
 import Data.Binary.Text (getTextUTF8LEB128, putTextUTF8LEB128)
-import Data.Default (Default (..))
 import Data.Either (fromRight, isRight)
 import Data.Hashable (Hashable)
 import Data.Text (Text)
@@ -25,7 +22,8 @@ import Database.LSMTree qualified as LSMT
 import GHC.Generics (Generic)
 import GHC.RTS.Events (Event)
 import GHC.RTS.Events qualified as E
-import IpeDB.Database qualified as DB
+import IpeDB.Database.Class qualified as DB
+import IpeDB.Database.LSMTree ()
 import IpeDB.Types.SrcLoc (SrcLoc (..), parseSrcLoc)
 import Numeric (showHex)
 import Text.ParserCombinators.ReadP qualified as P
@@ -80,30 +78,6 @@ toInfoProv ev
                 }
         Just (ipId, ip)
   | otherwise = Nothing
-
-{- |
-Default `DB.TableSpec` for CostCentre tables.
--}
-defaultInfoProvLSMTreeTableSpec :: DB.TableSpec InfoProvId InfoProv
-defaultInfoProvLSMTreeTableSpec =
-  DB.LSMTreeTableSpec
-    { name = "info-prov-table"
-    , label = "InfoProvId->InfoProv"
-    }
-
-instance Default (DB.TableSpec InfoProvId InfoProv) where
-  def :: DB.TableSpec InfoProvId InfoProv
-  def = defaultInfoProvLSMTreeTableSpec
-
-{- |
-Default `DB.IndexerOptions` for InfoProv tables.
--}
-defaultInfoProvIndexerOptions :: DB.IndexerOptions Event InfoProvId InfoProv
-defaultInfoProvIndexerOptions = DB.defaultIndexerOptions toInfoProv
-
-instance Default (DB.IndexerOptions Event InfoProvId InfoProv) where
-  def :: DB.IndexerOptions Event InfoProvId InfoProv
-  def = defaultInfoProvIndexerOptions
 
 --------------------------------------------------------------------------------
 -- Instances for binary serialisation of InfoProv
