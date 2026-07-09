@@ -11,7 +11,6 @@ module IpeDB.Database.Class (
   Database (..),
 
   -- * Serialisation
-  SerialiseViaBinary (..),
   SerialiseVia (..),
 
   -- * Errors
@@ -118,11 +117,6 @@ class
 --------------------------------------------------------------------------------
 -- Serialisation
 --------------------------------------------------------------------------------
-
-{- |
-Wrapper that derives the constraints required by the database backend via a `Binary` instance.
--}
-newtype SerialiseViaBinary v = SerialiseViaBinary {value :: v}
 
 {- |
 Wrapper that derives the constraints required by the database backend via `Coercible`.

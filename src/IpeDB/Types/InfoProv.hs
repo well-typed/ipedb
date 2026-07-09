@@ -22,8 +22,7 @@ import Database.LSMTree qualified as LSMT
 import GHC.Generics (Generic)
 import GHC.RTS.Events (Event)
 import GHC.RTS.Events qualified as E
-import IpeDB.Database.Class qualified as DB
-import IpeDB.Database.LSMTree ()
+import IpeDB.Database.LSMTree qualified as DB (SerialiseViaBinary (..), Value)
 import IpeDB.Types.SrcLoc (SrcLoc (..), parseSrcLoc)
 import Numeric (showHex)
 import Text.ParserCombinators.ReadP qualified as P
@@ -110,6 +109,8 @@ instance Binary InfoProv where
 --------------------------------------------------------------------------------
 
 deriving newtype instance LSMT.SerialiseKey InfoProvId
+
+deriving via DB.SerialiseViaBinary InfoProv instance DB.Value InfoProv
 
 deriving via DB.SerialiseViaBinary InfoProv instance LSMT.SerialiseValue InfoProv
 

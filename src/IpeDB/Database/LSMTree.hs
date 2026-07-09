@@ -11,6 +11,9 @@ module IpeDB.Database.LSMTree (
   Key,
   Value,
 
+  -- ** Helper
+  SerialiseViaBinary (..),
+
   -- * Sessions
   Session,
   SessionOptions (maybeSessionRoot),
@@ -39,7 +42,7 @@ module IpeDB.Database.LSMTree (
   defaultIndexerOptions,
   indexer,
 
-  -- ** Table Export/Import
+  -- ** Table Serialisation
   TableFormat (..),
   defaultTableFormat,
   withTableFrom,
@@ -66,7 +69,7 @@ import Data.Vector qualified as V
 import Data.Void (Void)
 import Data.Word (Word32)
 import Database.LSMTree qualified as LSMT
-import IpeDB.Database.Class (SerialiseVia (..), SerialiseViaBinary (..), TargetExistsError (..))
+import IpeDB.Database.Class (SerialiseVia (..), TargetExistsError (..))
 import System.Directory qualified as SD
 import System.FS.API.Strict qualified as FS
 import System.FS.BlockIO.IO qualified as BIO
@@ -81,32 +84,6 @@ import Prelude hiding (lookup)
 type Key = LSMT.SerialiseKey
 
 class (LSMT.SerialiseValue v, LSMT.ResolveValue v) => Value v
-
---------------------------------------------------------------------------------
--- Key Via Binary
-
--- instance (Binary v) => Key (SerialiseViaBinary v)
-
-instance (Binary v) => LSMT.SerialiseKey (SerialiseViaBinary v) where
-  serialiseKey :: SerialiseViaBinary v -> LSMT.RawBytes
-  serialiseKey = LSMT.serialiseKey . B.encode . (.value)
-
-  deserialiseKey :: LSMT.RawBytes -> SerialiseViaBinary v
-  deserialiseKey = SerialiseViaBinary . B.decode . LSMT.deserialiseKey
-
---------------------------------------------------------------------------------
--- Value Via Binary
-
-instance (Binary v) => Value (SerialiseViaBinary v)
-
-instance (Binary v) => LSMT.SerialiseValue (SerialiseViaBinary v) where
-  serialiseValue :: SerialiseViaBinary v -> LSMT.RawBytes
-  serialiseValue = LSMT.serialiseValue . B.encode . (.value)
-
-  deserialiseValue :: LSMT.RawBytes -> SerialiseViaBinary v
-  deserialiseValue = SerialiseViaBinary . B.decode . LSMT.deserialiseValue
-
-deriving via LSMT.ResolveAsFirst (SerialiseViaBinary v) instance LSMT.ResolveValue (SerialiseViaBinary v)
 
 --------------------------------------------------------------------------------
 -- Key Via Newtype
@@ -133,6 +110,40 @@ instance (Coercible v u, LSMT.SerialiseValue u) => LSMT.SerialiseValue (Serialis
   deserialiseValue = coerce @u @_ . LSMT.deserialiseValue
 
 deriving via LSMT.ResolveAsFirst (SerialiseVia v u) instance LSMT.ResolveValue (SerialiseVia v u)
+
+--------------------------------------------------------------------------------
+-- Deriving Via Binary
+
+{- |
+Wrapper that derives the constraints required by the database backend via a `Binary` instance.
+-}
+newtype SerialiseViaBinary v = SerialiseViaBinary {value :: v}
+
+--------------------------------------------------------------------------------
+-- Key Via Binary
+
+-- instance (Binary v) => Key (SerialiseViaBinary v)
+
+instance (Binary v) => LSMT.SerialiseKey (SerialiseViaBinary v) where
+  serialiseKey :: SerialiseViaBinary v -> LSMT.RawBytes
+  serialiseKey = LSMT.serialiseKey . B.encode . (.value)
+
+  deserialiseKey :: LSMT.RawBytes -> SerialiseViaBinary v
+  deserialiseKey = SerialiseViaBinary . B.decode . LSMT.deserialiseKey
+
+--------------------------------------------------------------------------------
+-- Value Via Binary
+
+instance (Binary v) => Value (SerialiseViaBinary v)
+
+instance (Binary v) => LSMT.SerialiseValue (SerialiseViaBinary v) where
+  serialiseValue :: SerialiseViaBinary v -> LSMT.RawBytes
+  serialiseValue = LSMT.serialiseValue . B.encode . (.value)
+
+  deserialiseValue :: LSMT.RawBytes -> SerialiseViaBinary v
+  deserialiseValue = SerialiseViaBinary . B.decode . LSMT.deserialiseValue
+
+deriving via LSMT.ResolveAsFirst (SerialiseViaBinary v) instance LSMT.ResolveValue (SerialiseViaBinary v)
 
 --------------------------------------------------------------------------------
 -- Sessions
@@ -255,7 +266,7 @@ withNewTable session (TableOptions config) action = do
 Insert entries into a table.
 -}
 inserts ::
-  (LSMT.SerialiseKey k, LSMT.SerialiseValue v, LSMT.ResolveValue v) =>
+  (Key k, Value v) =>
   Table k v -> Vector (k, v) -> IO ()
 inserts Table{..} =
   LSMT.inserts table . fmap (\(k, v) -> (k, v, Nothing))
@@ -264,7 +275,7 @@ inserts Table{..} =
 Lookup entries from a table.
 -}
 lookups ::
-  (LSMT.SerialiseKey k, LSMT.SerialiseValue v, LSMT.ResolveValue v) =>
+  (Key k, Value v) =>
   Table k v -> Vector k -> IO (Vector (Maybe v))
 lookups Table{..} =
   fmap (fmap LSMT.getValue) . LSMT.lookups table
@@ -273,7 +284,7 @@ lookups Table{..} =
 Insert entries into a table.
 -}
 insert ::
-  (LSMT.SerialiseKey k, LSMT.SerialiseValue v, LSMT.ResolveValue v) =>
+  (Key k, Value v) =>
   Table k v -> k -> v -> IO ()
 insert Table{..} k v =
   LSMT.insert table k v Nothing
@@ -282,7 +293,7 @@ insert Table{..} k v =
 Lookup one entry from a table.
 -}
 lookup ::
-  (LSMT.SerialiseKey k, LSMT.SerialiseValue v, LSMT.ResolveValue v) =>
+  (Key k, Value v) =>
   Table k v ->
   k ->
   IO (Maybe v)
@@ -318,7 +329,7 @@ instance Default IteratorOptions where
 Stream entries from a table.
 -}
 withIterator ::
-  (LSMT.SerialiseKey k, LSMT.SerialiseValue v, LSMT.ResolveValue v) =>
+  (Key k, Value v) =>
   IteratorOptions ->
   Table k v ->
   (M.SourceT IO (k, v) -> IO a) ->
@@ -368,7 +379,7 @@ instance Default IndexerOptions where
 Index data from a GHC event stream.
 -}
 indexer ::
-  (LSMT.SerialiseKey k, LSMT.SerialiseValue v, LSMT.ResolveValue v) =>
+  (Key k, Value v) =>
   (e -> Maybe (k, v)) ->
   IndexerOptions ->
   Table k v ->

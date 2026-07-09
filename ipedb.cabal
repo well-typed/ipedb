@@ -76,6 +76,7 @@ library
   exposed-modules:
     IpeDB.Database
     IpeDB.Database.Class
+    IpeDB.Database.HashMap
     IpeDB.Database.LSMTree
     IpeDB.Types.CostCentre
     IpeDB.Types.InfoProv
@@ -100,6 +101,7 @@ library
     tar >=0.7 && <0.8,
     temporary >=1.1 && <1.4,
     text >=1.2 && <2.2,
+    unordered-containers >=0.2 && <0.3,
     vector >=0.11 && <0.14,
     zlib >=0.7 && <0.8,
 

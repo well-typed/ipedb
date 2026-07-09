@@ -27,8 +27,7 @@ import Foreign.C.Types (CBool (..))
 import GHC.Generics (Generic)
 import GHC.RTS.Events (Event)
 import GHC.RTS.Events qualified as E
-import IpeDB.Database.Class qualified as DB
-import IpeDB.Database.LSMTree ()
+import IpeDB.Database.LSMTree qualified as DB (SerialiseViaBinary (..))
 import IpeDB.Types.SrcLoc (SrcLoc (..), parseSrcLoc)
 import Numeric (showHex)
 import Text.ParserCombinators.ReadP qualified as P
