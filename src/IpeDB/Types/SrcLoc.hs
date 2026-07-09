@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 {- |
 Module      : IpeDB.Types.SrcLoc
 Description : Representation for GHC source locations.
@@ -7,9 +9,10 @@ Portability : portable
 module IpeDB.Types.SrcLoc (
   SrcLoc (SrcLoc, UnhelpfulSrcLoc, srcFilePath, srcRange),
   ppSrcLoc,
-  pSrcLoc,
   parseSrcLoc,
   Range (Range, start, end, ..),
+  ppRange,
+  parseRange,
   Point (..),
 ) where
 
@@ -17,6 +20,7 @@ import Codec.LEB128.Generic (decodeLEB128, encodeLEB128)
 import Data.Binary (Binary (..), Get, Put, getWord8, putWord8)
 import Data.Binary.Text (getStringUTF8LEB128, putStringUTF8LEB128)
 import Data.Char (isDigit)
+import Data.List qualified as L
 import Data.Word (Word32)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (..))
@@ -52,30 +56,34 @@ ppSrcLoc SrcLoc{..} =
 {- |
 Parser for GHC source location information.
 -}
-pSrcLoc :: ReadP SrcLoc
-pSrcLoc = SrcLoc <$> pSrcFilePath <* P.char ':' <*> pSrcRange
- where
-  -- TODO: This is very slow. Unfortunately, the format of GHC source
-  --       location information is a bit of a nightmare, and you can't
-  --       know where the filepath ends until you've successfully parsed
-  --       the source range, since the filepath and the range are separated
-  --       by a colon, but filepaths may contain any number of colons and
-  --       ranges may contain either zero or one colon.
-  pSrcFilePath :: ReadP FilePath
-  pSrcFilePath = P.many P.get
-
-  pSrcRange :: ReadP (Maybe Range)
-  pSrcRange = (Just <$> pRange) P.<++ (Nothing <$ P.eof)
-
-{- |
-Parser for GHC source location information.
--}
 parseSrcLoc :: String -> Either String SrcLoc
-parseSrcLoc s =
-  case [x | (x, "") <- P.readP_to_S pSrcLoc s] of
-    [x] -> Right x
-    [] -> Left "parseSrcLoc: no parse"
-    _ -> Left "parseSrcLoc: ambiguous parse"
+parseSrcLoc str0 = parseSrcLocRev (reverse str0)
+ where
+  parseSrcLocRev :: String -> Either String SrcLoc
+  parseSrcLocRev strRev0 = do
+    let (maybeSrcRangeRevStr0, strRev1) = span (/= ':') strRev0
+    let stripColon = \case (':' : str) -> str; str -> str
+    let strRev2 = stripColon strRev1
+    case maybeSrcRangeRevStr0 of
+      -- If this SrcLoc uses the empty range...
+      [] | ":" `L.isPrefixOf` strRev1 -> do
+        let srcFilePath = reverse strRev2
+        let srcRange = Nothing
+        pure SrcLoc{..}
+      -- If this SrcLoc uses a multiline range...
+      ')' : _ -> do
+        let srcFilePath = reverse strRev2
+        srcRange <- Just <$> parseRange (reverse maybeSrcRangeRevStr0)
+        pure SrcLoc{..}
+      -- If this SrcLoc uses a oneline or point range...
+      (c : _) | isDigit c -> do
+        let (maybeSrcRangeRevStr1, strRev3) = span (/= ':') strRev2
+        let srcFilePath = reverse (stripColon strRev3)
+        srcRange <- Just <$> parseRange (reverse maybeSrcRangeRevStr1 <> ":" <> reverse maybeSrcRangeRevStr0)
+        pure SrcLoc{..}
+      -- Otherwise, this SrcLoc has an invalid range...
+      _otherwise -> do
+        Left "parseSrcLoc: no parse"
 
 --------------------------------------------------------------------------------
 -- Source Ranges
@@ -206,6 +214,16 @@ pRange = pRange'MultiLine P.<++ (pRange'OneLine P.+++ pPointRange)
 
   pPoint :: ReadP Point
   pPoint = Point <$ P.char '(' <*> pIndex <* P.char ',' <*> pIndex <* P.char ')'
+
+{- |
+Parse a source range.
+-}
+parseRange :: String -> Either String Range
+parseRange s =
+  case [x | (x, "") <- P.readP_to_S pRange s] of
+    [x] -> Right x
+    [] -> Left "parseSrcLoc: no parse"
+    _ -> Left "parseSrcLoc: ambiguous parse"
 
 --------------------------------------------------------------------------------
 -- Instances for binary serialisation of SrcLoc
