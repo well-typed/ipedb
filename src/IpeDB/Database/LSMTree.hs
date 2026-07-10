@@ -1,12 +1,10 @@
-{-# OPTIONS_GHC -Wno-orphans #-}
-
 {- |
-Module      : IpeDB.Database
+Module      : IpeDB.Database.LSMTree
 Description : This modules provides a database instance backed by @lsm-tree@.
 Stability   : experimental
 Portability : portable
 -}
-module IpeDB.Database (
+module IpeDB.Database.LSMTree (
   -- * Constraints
   Key,
   Value,

@@ -32,7 +32,12 @@
     - {
         name: [Database.LSMTree],
         as: LSMT,
-        within: [IpeDB.Database, IpeDB.Types.CostCentre, IpeDB.Types.InfoProv],
+        within:
+          [
+            IpeDB.Database.LSMTree,
+            IpeDB.Types.CostCentre,
+            IpeDB.Types.InfoProv,
+          ],
       }
 #   - {name: [Data.Set, Data.HashSet], as: Set} # if you import Data.Set qualified, it must be as 'Set'
 #   - {name: Control.Arrow, within: []} # Certain modules are banned entirely

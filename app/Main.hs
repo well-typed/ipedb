@@ -17,7 +17,7 @@ import Data.Version qualified as V (showVersion)
 import Data.Word (Word32)
 import GHC.RTS.Events (Event)
 import GHC.RTS.Events.Incremental (Decoder (..), decodeEventLog)
-import IpeDB.Database qualified as DB
+import IpeDB.Database.LSMTree qualified as DB
 import IpeDB.Types.InfoProv qualified as IP
 import Options.Applicative qualified as O
 import Paths_ipedb (version)
