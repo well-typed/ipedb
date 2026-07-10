@@ -42,6 +42,7 @@ module IpeDB.Database (
   indexer,
 
   -- ** Table Serialisation
+  TargetExistsError (..),
   TableFormat (..),
   defaultTableFormat,
   withTableFrom,
