@@ -10,15 +10,12 @@ module IpeDB.Types.CostCentre (
   CostCentreId (..),
   CostCentre (..),
   toCostCentre,
-  defaultCostCentreLSMTreeTableSpec,
-  defaultCostCentreIndexerOptions,
 ) where
 
 import Control.Exception (assert)
 import Data.Binary (Binary (..), Get, Put)
 import Data.Binary.Text (getTextUTF8LEB128, putTextUTF8LEB128)
 import Data.Coerce (coerce)
-import Data.Default (Default (..))
 import Data.Either (fromRight, isRight)
 import Data.Hashable (Hashable)
 import Data.Text (Text)
@@ -30,7 +27,7 @@ import Foreign.C.Types (CBool (..))
 import GHC.Generics (Generic)
 import GHC.RTS.Events (Event)
 import GHC.RTS.Events qualified as E
-import IpeDB.Database qualified as DB
+import IpeDB.Database qualified as DB (SerialiseViaBinary (..))
 import IpeDB.Types.SrcLoc (SrcLoc (..), parseSrcLoc)
 import Numeric (showHex)
 import Text.ParserCombinators.ReadP qualified as P
@@ -85,30 +82,6 @@ toCostCentre ev
                 }
         Just (ccId, cc)
   | otherwise = Nothing
-
-{- |
-Default `DB.TableSpec` for CostCentre tables.
--}
-defaultCostCentreLSMTreeTableSpec :: DB.TableSpec CostCentreId CostCentre
-defaultCostCentreLSMTreeTableSpec =
-  DB.LSMTreeTableSpec
-    { name = "cost-centre-table"
-    , label = "CostCentreId->CostCentre"
-    }
-
-instance Default (DB.TableSpec CostCentreId CostCentre) where
-  def :: DB.TableSpec CostCentreId CostCentre
-  def = defaultCostCentreLSMTreeTableSpec
-
-{- |
-Default `DB.IndexerOptions` for CostCentre tables.
--}
-defaultCostCentreIndexerOptions :: DB.IndexerOptions Event CostCentreId CostCentre
-defaultCostCentreIndexerOptions = DB.defaultIndexerOptions toCostCentre
-
-instance Default (DB.IndexerOptions Event CostCentreId CostCentre) where
-  def :: DB.IndexerOptions Event CostCentreId CostCentre
-  def = defaultCostCentreIndexerOptions
 
 --------------------------------------------------------------------------------
 -- Instances for binary serialisation of CostCentre
