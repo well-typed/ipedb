@@ -1,28 +1,36 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 {- |
 Module      : IpeDB.Database
-Description : This modules provides a generic abstraction over @lsm-tree@ databases.
+Description : This modules provides a database instance backed by @lsm-tree@.
 Stability   : experimental
 Portability : portable
 -}
 module IpeDB.Database (
+  -- * Constraints
+  Key,
+  Value,
+
+  -- ** Helper
+  SerialiseViaBinary (..),
+
   -- * Sessions
   Session,
   SessionOptions (maybeSessionRoot),
-  defaultLSMTreeSessionOptions,
+  defaultSessionOptions,
   withNewSession,
 
   -- * Tables
   Table,
-  TableSpec (..),
   withNewTable,
-  withNewTableWith,
   inserts,
-  lookup,
   lookups,
+  insert,
+  lookup,
 
   -- ** Table Options
-  TableConfig (..),
-  defaultLSMTreeTableConfig,
+  TableOptions (..),
+  defaultTableOptions,
 
   -- ** Table Enumerating
   IteratorOptions (iteratorBufferSize),
@@ -34,25 +42,17 @@ module IpeDB.Database (
   defaultIndexerOptions,
   indexer,
 
-  -- ** Table Export/Import
-  withTableFrom,
-  saveTable,
+  -- ** Table Serialisation
   TableFormat (..),
   defaultTableFormat,
-
-  -- * Serialisation
-  SerialiseViaBinary (..),
-  SerialiseVia (..),
-
-  -- * Errors
-  InvalidTableNameError (..),
-  TargetExistsError (..),
+  withTableFrom,
+  saveTable,
 ) where
 
 import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Check qualified as Tar
 import Codec.Compression.GZip qualified as GZip
-import Control.Exception (Exception (..), SomeException (..), bracketOnError, bracket_, catch, throwIO)
+import Control.Exception (Exception, SomeException (..), bracketOnError, bracket_, catch, throwIO)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Binary (Binary)
@@ -63,7 +63,7 @@ import Data.Default (Default (..))
 import Data.Machine ((~>))
 import Data.Machine qualified as M
 import Data.Maybe (fromJust, fromMaybe)
-import Data.String (IsString (..))
+import Data.Text qualified as T
 import Data.Vector (Vector)
 import Data.Vector qualified as V
 import Data.Void (Void)
@@ -76,24 +76,75 @@ import System.FilePath qualified as SF
 import System.IO.Temp (withSystemTempDirectory, withTempDirectory)
 import Prelude hiding (lookup)
 
-{- Note [Backends]
-~~~~~~~~~~~~~~~~~~
-If support for multiple backends – e.g., lsm-tree, SQLite3, etc – is required
-in the future, it should be fairly easy to index the various types – Session,
-Table, TableSpec, etc – with a type-level backend...
+--------------------------------------------------------------------------------
+-- Constraints
+--------------------------------------------------------------------------------
 
-@
-type data Backend = LSMTree | SQLite3
+type Key k = LSMT.SerialiseKey k
 
-data Session (b :: Backend) where
-  LSMTreeSession :: ... -> Session LSMTree
-  SQLite3Session :: ... -> Session SQLite3
-@
+type Value v = (LSMT.SerialiseValue v, LSMT.ResolveValue v)
 
-...and redefine the functions in the API to require that all used types share
-the same backend index.
+--------------------------------------------------------------------------------
+-- Deriving Via Newtype
 
+{- |
+Wrapper that derives the constraints required by the database backend via `Coercible`.
 -}
+newtype SerialiseVia v u = SerialiseVia {value :: v}
+
+--------------------------------------------------------------------------------
+-- Key Via Newtype
+
+instance (Coercible v u, LSMT.SerialiseKey u) => LSMT.SerialiseKey (SerialiseVia v u) where
+  serialiseKey :: SerialiseVia v u -> LSMT.RawBytes
+  serialiseKey = LSMT.serialiseKey . coerce @v @u . (.value)
+
+  deserialiseKey :: LSMT.RawBytes -> SerialiseVia v u
+  deserialiseKey = SerialiseVia . coerce @u @v . LSMT.deserialiseKey
+
+--------------------------------------------------------------------------------
+-- Value Via Newtype
+
+instance (Coercible v u, LSMT.SerialiseValue u) => LSMT.SerialiseValue (SerialiseVia v u) where
+  serialiseValue :: SerialiseVia v u -> LSMT.RawBytes
+  serialiseValue = LSMT.serialiseValue . coerce @_ @u
+
+  deserialiseValue :: LSMT.RawBytes -> SerialiseVia v u
+  deserialiseValue = coerce @u @_ . LSMT.deserialiseValue
+
+deriving via LSMT.ResolveAsFirst (SerialiseVia v u) instance LSMT.ResolveValue (SerialiseVia v u)
+
+--------------------------------------------------------------------------------
+-- Deriving Via Binary
+
+{- |
+Wrapper that derives the constraints required by the database backend via a `Binary` instance.
+-}
+newtype SerialiseViaBinary v = SerialiseViaBinary {value :: v}
+
+--------------------------------------------------------------------------------
+-- Key Via Binary
+
+-- instance (Binary v) => Key (SerialiseViaBinary v)
+
+instance (Binary v) => LSMT.SerialiseKey (SerialiseViaBinary v) where
+  serialiseKey :: SerialiseViaBinary v -> LSMT.RawBytes
+  serialiseKey = LSMT.serialiseKey . B.encode . (.value)
+
+  deserialiseKey :: LSMT.RawBytes -> SerialiseViaBinary v
+  deserialiseKey = SerialiseViaBinary . B.decode . LSMT.deserialiseKey
+
+--------------------------------------------------------------------------------
+-- Value Via Binary
+
+instance (Binary v) => LSMT.SerialiseValue (SerialiseViaBinary v) where
+  serialiseValue :: SerialiseViaBinary v -> LSMT.RawBytes
+  serialiseValue = LSMT.serialiseValue . B.encode . (.value)
+
+  deserialiseValue :: LSMT.RawBytes -> SerialiseViaBinary v
+  deserialiseValue = SerialiseViaBinary . B.decode . LSMT.deserialiseValue
+
+deriving via LSMT.ResolveAsFirst (SerialiseViaBinary v) instance LSMT.ResolveValue (SerialiseViaBinary v)
 
 --------------------------------------------------------------------------------
 -- Sessions
@@ -103,7 +154,7 @@ the same backend index.
 Representation of database sessions.
 -}
 data Session
-  = LSMTreeSession
+  = Session
   { mountPoint :: FS.MountPoint
   , sessionRoot :: FS.FsPath
   , session :: LSMT.Session IO
@@ -113,22 +164,22 @@ data Session
 The options for database sessions.
 -}
 newtype SessionOptions
-  = LSMTreeSessionOptions
+  = SessionOptions
   { maybeSessionRoot :: Maybe FilePath
   }
 
 {- |
 The default database session options.
 -}
-defaultLSMTreeSessionOptions :: SessionOptions
-defaultLSMTreeSessionOptions =
-  LSMTreeSessionOptions
+defaultSessionOptions :: SessionOptions
+defaultSessionOptions =
+  SessionOptions
     { maybeSessionRoot = Nothing
     }
 
 instance Default SessionOptions where
   def :: SessionOptions
-  def = defaultLSMTreeSessionOptions
+  def = defaultSessionOptions
 
 {- |
 Run an action with a new session.
@@ -137,7 +188,7 @@ withNewSession ::
   SessionOptions ->
   (Session -> IO r) ->
   IO r
-withNewSession LSMTreeSessionOptions{..} action = do
+withNewSession SessionOptions{..} action = do
   -- Create a temporary directory for the database session.
   let withSessionDir :: (FilePath -> IO a) -> IO a
       withSessionDir = case maybeSessionRoot of
@@ -158,7 +209,7 @@ withNewSession LSMTreeSessionOptions{..} action = do
       let sessionSalt = 0
       LSMT.withNewSession mempty hasFS hasBlockIO sessionSalt sessionDirFsPath $ \session ->
         -- Run the action with the session.
-        action LSMTreeSession{sessionRoot = sessionRootFsPath, ..}
+        action Session{sessionRoot = sessionRootFsPath, ..}
 
 --------------------------------------------------------------------------------
 -- Tables
@@ -167,33 +218,183 @@ withNewSession LSMTreeSessionOptions{..} action = do
 {- |
 A table.
 
-Use `withNewTable`, `withNewTableWith`, or `withTableFrom` to construct a table.
+Use `withNewTable`, `withNewTable`, or `withTableFrom` to construct a table.
 -}
 data Table k v
-  = LSMTreeTable
-  { spec :: {-# UNPACK #-} !(TableSpec k v)
-  , session :: !Session
+  = Table
+  { session :: !Session
   , table :: !(LSMT.Table IO k v Void)
   }
 
 {- |
-A table specification.
-
-This contains the data needed to interact with the database backend.
-
-For @lsm-tree@, this contains instances for the serialisation classes for the
-key and value types, a table name, and a label that describes the types of the
-table entries.
-
-The "IpeDB.Types.CostCentre" and "IpeDB.Types.InfoProv" modules define default
-table specifications for their respective databases.
+Configuration options for tables, which can be used for performance tuning.
 -}
-data TableSpec k v
-  = (LSMT.SerialiseKey k, LSMT.SerialiseValue v, LSMT.ResolveValue v) =>
-  LSMTreeTableSpec
-  { name :: String
-  , label :: String
+newtype TableOptions
+  = -- | See the @lsm-tree@ documentation for `LSMT.TableConfig`.
+    TableOptions
+    { tableConfig :: LSMT.TableConfig
+    }
+
+{- |
+The default `TableOptions`.
+-}
+defaultTableOptions :: TableOptions
+defaultTableOptions =
+  TableOptions
+    { tableConfig = LSMT.defaultTableConfig
+    }
+
+instance Default TableOptions where
+  def :: TableOptions
+  def = defaultTableOptions
+
+{- |
+Run an action with a new table.
+-}
+withNewTable ::
+  forall k v a.
+  Session ->
+  TableOptions ->
+  (Table k v -> IO a) ->
+  IO a
+withNewTable session (TableOptions config) action = do
+  -- Create a new LSM Tree table.
+  LSMT.withTableWith config session.session $ \table ->
+    -- Run the action.
+    action Table{..}
+
+{- |
+Insert entries into a table.
+-}
+inserts ::
+  (Key k, Value v) =>
+  Table k v -> Vector (k, v) -> IO ()
+inserts Table{..} =
+  LSMT.inserts table . fmap (\(k, v) -> (k, v, Nothing))
+
+{- |
+Lookup entries from a table.
+-}
+lookups ::
+  (Key k, Value v) =>
+  Table k v -> Vector k -> IO (Vector (Maybe v))
+lookups Table{..} =
+  fmap (fmap LSMT.getValue) . LSMT.lookups table
+
+{- |
+Insert entries into a table.
+-}
+insert ::
+  (Key k, Value v) =>
+  Table k v -> k -> v -> IO ()
+insert Table{..} k v =
+  LSMT.insert table k v Nothing
+
+{- |
+Lookup one entry from a table.
+-}
+lookup ::
+  (Key k, Value v) =>
+  Table k v ->
+  k ->
+  IO (Maybe v)
+lookup Table{..} =
+  fmap LSMT.getValue . LSMT.lookup table
+
+--------------------------------------------------------------------------------
+-- Enumerating
+
+{- |
+The options for `withIterator`.
+
+[`iteratorBufferSize` :: `Word32`]:
+  The size of the elems buffer in number of elements.
+  The default is 10.
+-}
+newtype IteratorOptions = IteratorOptions
+  { iteratorBufferSize :: Word32
   }
+
+{- |
+The default options for `withIterator`.
+-}
+defaultIteratorOptions :: IteratorOptions
+defaultIteratorOptions =
+  IteratorOptions{iteratorBufferSize = 10}
+
+instance Default IteratorOptions where
+  def :: IteratorOptions
+  def = defaultIteratorOptions
+
+{- |
+Stream entries from a table.
+-}
+withIterator ::
+  (Key k, Value v) =>
+  IteratorOptions ->
+  Table k v ->
+  (M.SourceT IO (k, v) -> IO a) ->
+  IO a
+withIterator options Table{..} action = do
+  LSMT.withCursor table $ \cursor ->
+    action $ M.MachineT $ do
+      -- The plan for a source that repeatedly queries the cursor.
+      let entrySourcePlan = do
+            let n = fromIntegral options.iteratorBufferSize
+            xs <- liftIO (LSMT.take n cursor)
+            M.yield xs
+            unless (V.length xs < n) entrySourcePlan
+
+      -- Helper to convert LSMT.Entry to a key-value pair.
+      let toKeyValue e = (LSMT.getEntryKey e, LSMT.getEntryValue e)
+
+      M.runMachineT $
+        M.construct entrySourcePlan ~> M.asParts ~> M.mapping toKeyValue
+
+--------------------------------------------------------------------------------
+-- Indexing
+
+{- |
+The options for `indexer`.
+
+[`indexerBufferSize` :: `Word32`]:
+  The size of the index buffer in number of elements.
+  The default is 10.
+-}
+newtype IndexerOptions = IndexerOptions
+  { indexerBufferSize :: Word32
+  }
+
+{- |
+The default options for `indexer`.
+-}
+defaultIndexerOptions :: IndexerOptions
+defaultIndexerOptions =
+  IndexerOptions{indexerBufferSize = 10}
+
+instance Default IndexerOptions where
+  def :: IndexerOptions
+  def = defaultIndexerOptions
+
+{- |
+Index data from a GHC event stream.
+-}
+indexer ::
+  (Key k, Value v) =>
+  (e -> Maybe (k, v)) ->
+  IndexerOptions ->
+  Table k v ->
+  M.ProcessT IO e Void
+indexer extractKV options table =
+  M.mapping extractKV
+    ~> M.asParts
+    ~> M.buffered (fromIntegral options.indexerBufferSize)
+    ~> M.mapping V.fromList
+    ~> M.repeatedly (M.await >>= liftIO . inserts table)
+
+--------------------------------------------------------------------------------
+-- Serialisation
+--------------------------------------------------------------------------------
 
 {- |
 The table serialisation formats.
@@ -232,74 +433,19 @@ instance Default TableFormat where
   def = LSMTreeSnapshotV2TarGz
 
 {- |
-Configuration options for tables, which can be used for performance tuning.
--}
-newtype TableConfig
-  = -- | See the @lsm-tree@ documentation for `LSMT.TableConfig`.
-    LSMTreeTableConfig LSMT.TableConfig
-
-{- |
-The default `TableConfig`.
--}
-defaultLSMTreeTableConfig :: TableConfig
-defaultLSMTreeTableConfig =
-  LSMTreeTableConfig LSMT.defaultTableConfig
-
-instance Default TableConfig where
-  def :: TableConfig
-  def = defaultLSMTreeTableConfig
-
-{- |
-Run an action with a new table.
--}
-withNewTable ::
-  forall k v a.
-  Session ->
-  TableSpec k v ->
-  (Table k v -> IO a) ->
-  IO a
-withNewTable session spec =
-  withNewTableWith session spec def
-
-{- |
-Run an action with a new table.
--}
-withNewTableWith ::
-  forall k v a.
-  Session ->
-  TableSpec k v ->
-  TableConfig ->
-  (Table k v -> IO a) ->
-  IO a
-withNewTableWith session spec (LSMTreeTableConfig config) action = do
-  -- Check if the table name is a valid snapshot name.
-  unless (LSMT.isValidSnapshotName spec.name) $
-    throwIO $
-      InvalidTableNameError spec.name
-
-  -- Create a new LSM Tree table.
-  LSMT.withTableWith config session.session $ \table ->
-    -- Run the action.
-    action LSMTreeTable{..}
-
-{- |
 Run an action with a table.
 -}
 withTableFrom ::
   forall k v a.
+  (LSMT.ResolveValue v) =>
   Session ->
-  TableSpec k v ->
   FilePath ->
   TableFormat ->
   (Table k v -> IO a) ->
   IO a
-withTableFrom session spec@LSMTreeTableSpec{} inputRelPath inputFormat action = do
+withTableFrom session inputRelPath inputFormat action = do
   -- Find the absolute file path to the table.
   inputAbsPath <- SD.makeAbsolute inputRelPath
-
-  -- Snapshot name and label for the lsm-tree library.
-  let !snapshotName = LSMT.toSnapshotName spec.name
-  let !snapshotLabel = LSMT.SnapshotLabel (fromString spec.label)
 
   -- Load a table in the LSMTreeSnapshotV2 format.
   let loadLSMTreeSnapshotV2 :: IO ()
@@ -310,7 +456,7 @@ withTableFrom session spec@LSMTreeTableSpec{} inputRelPath inputFormat action = 
               fromMaybe (error $ "Cannot hardlink from " <> inputAbsPath <> "; not under mount point " <> mountPointPath <> ".") $
                 FS.fsFromFilePath session.mountPoint inputAbsPath
         -- Export the snapshot.
-        let snapshotFsPath = targetFsPath FS.</> FS.mkFsPath [spec.name]
+        let snapshotFsPath = targetFsPath FS.</> FS.mkFsPath [snapshotRelPath]
         LSMT.importSnapshot session.session snapshotName snapshotFsPath
 
   -- Load a table in the LSMTreeSnapshotV2Tar format.
@@ -322,7 +468,7 @@ withTableFrom session spec@LSMTreeTableSpec{} inputRelPath inputFormat action = 
           -- Extract the snapshot to @active-import/$tableName@.
           !importAbsDir <- SD.makeAbsolute importDir
           let !importDirFsPath = fromJust (FS.fsFromFilePath session.mountPoint importAbsDir)
-          let !snapshotDirFsPath = importDirFsPath FS.</> FS.mkFsPath [spec.name]
+          let !snapshotDirFsPath = importDirFsPath FS.</> FS.mkFsPath [snapshotRelPath]
           tarByteString <- BSL.readFile inputAbsPath
           let tarEntries = Tar.read . decompress $ tarByteString
           let tarCheck entry = SomeException <$> Tar.checkEntrySecurity entry
@@ -338,29 +484,28 @@ withTableFrom session spec@LSMTreeTableSpec{} inputRelPath inputFormat action = 
         LSMTreeSnapshotV2TarGz -> loadLSMTreeSnapshotV2Tar GZip.decompress
 
   -- Load the snapshot.
-  bracketOnError loadSnapshot (\() -> deleteSnapshot session.session snapshotName) $ \() ->
+  bracketOnError loadSnapshot (const $ deleteSnapshot session.session) $ \() ->
     -- Open the table from the snapshot.
     LSMT.withTableFromSnapshot session.session snapshotName snapshotLabel $ \table -> do
       -- Delete the snapshot.
-      deleteSnapshot session.session snapshotName
+      deleteSnapshot session.session
       -- Run the action.
-      action LSMTreeTable{..}
+      action Table{..}
 
 {- |
 Save a table.
 
 The target path must not already exist.
 -}
-saveTable :: Table k v -> FilePath -> TableFormat -> IO ()
+saveTable ::
+  Table k v ->
+  FilePath ->
+  TableFormat ->
+  IO ()
 saveTable table targetRelPath targetFormat = do
   -- If the target path already exists, throw a TargetExistsError.
   targetExists <- SD.doesPathExist targetRelPath
   when targetExists . throwIO $ TargetExistsError targetRelPath
-
-  -- Save an lsm-tree snapshot.
-  let !snapshotName = LSMT.toSnapshotName table.spec.name
-  let !snapshotLabel = LSMT.SnapshotLabel (fromString table.spec.label)
-  let !saveSnapshot = LSMT.saveSnapshot snapshotName snapshotLabel table.table
 
   -- Export the lsm-tree snapshot by hard linking.
   let saveLSMTreeSnapshotV2 :: IO ()
@@ -377,7 +522,7 @@ saveTable table targetRelPath targetFormat = do
         let removeTarget = SD.removeDirectory targetAbsPath
         -- Export the snapshot.
         bracketOnError createTarget (const removeTarget) . const $ do
-          let snapshotFsPath = targetFsPath FS.</> FS.mkFsPath [table.spec.name]
+          let snapshotFsPath = targetFsPath FS.</> FS.mkFsPath [snapshotRelPath]
           LSMT.exportSnapshot table.session.session snapshotName snapshotFsPath
 
   -- Export the lsm-tree snapshot by compressing and archiving.
@@ -387,203 +532,67 @@ saveTable table targetRelPath targetFormat = do
         let !sessionRootPath = FS.fsToFilePath table.session.mountPoint table.session.sessionRoot
         withTempDirectory sessionRootPath "active-export" $ \exportRootDir -> do
           -- Export the snapshot to the temporary @active-export@ directory.
-          let !snapshotDir = exportRootDir SF.</> table.spec.name
+          let !snapshotDir = exportRootDir SF.</> snapshotRelPath
           !snapshotAbsDir <- SD.makeAbsolute snapshotDir
           let !snapshotDirFsPath = fromJust (FS.fsFromFilePath table.session.mountPoint snapshotAbsDir)
           LSMT.exportSnapshot table.session.session snapshotName snapshotDirFsPath
           -- Create the output tar archive.
-          BSL.writeFile targetRelPath . compress =<< Tar.write' =<< Tar.pack' exportRootDir [table.spec.name]
+          BSL.writeFile targetRelPath . compress =<< Tar.write' =<< Tar.pack' exportRootDir [snapshotRelPath]
 
-  bracket_ saveSnapshot (deleteSnapshot table.session.session snapshotName) $
+  bracket_ (saveSnapshot table.table) (deleteSnapshot table.session.session) $
     case targetFormat of
       LSMTreeSnapshotV2 -> saveLSMTreeSnapshotV2
       LSMTreeSnapshotV2Tar -> saveLSMTreeSnapshotV2Tar id
       LSMTreeSnapshotV2TarGz -> saveLSMTreeSnapshotV2Tar GZip.compress
 
-{- |
-Insert entries into a table.
--}
-inserts :: Table k v -> Vector (k, v) -> IO ()
-inserts = \case
-  LSMTreeTable{spec = LSMTreeTableSpec{}, ..} ->
-    LSMT.inserts table . fmap (\(k, v) -> (k, v, Nothing))
-
-{- |
-Lookup one entry from a table.
--}
-lookup :: Table k v -> k -> IO (Maybe v)
-lookup = \case
-  LSMTreeTable{spec = LSMTreeTableSpec{}, ..} ->
-    fmap LSMT.getValue . LSMT.lookup table
-
-{- |
-Lookup entries from a table.
--}
-lookups :: Table k v -> Vector k -> IO (Vector (Maybe v))
-lookups = \case
-  LSMTreeTable{spec = LSMTreeTableSpec{}, ..} ->
-    fmap (fmap LSMT.getValue) . LSMT.lookups table
-
 --------------------------------------------------------------------------------
--- Enumerating
+-- Internal Helpers
 
 {- |
-The options for `withIterator`.
+Internal helper.
 
-[`iteratorBufferSize` :: `Word32`]:
-  The size of the elems buffer in number of elements.
-  The default is 10.
+Save an LSM Tree snapshot.
 -}
-newtype IteratorOptions = IteratorOptions
-  { iteratorBufferSize :: Word32
-  }
-
-{- |
-The default options for `withIterator`.
--}
-defaultIteratorOptions :: IteratorOptions
-defaultIteratorOptions =
-  IteratorOptions{iteratorBufferSize = 10}
-
-instance Default IteratorOptions where
-  def :: IteratorOptions
-  def = defaultIteratorOptions
-
-{- |
-Stream entries from a table.
--}
-withIterator :: IteratorOptions -> Table k v -> (M.SourceT IO (k, v) -> IO a) -> IO a
-withIterator options = \case
-  LSMTreeTable{spec = LSMTreeTableSpec{}, ..} -> \action -> do
-    LSMT.withCursor table $ \cursor ->
-      action $ M.MachineT $ do
-        -- The plan for a source that repeatedly queries the cursor.
-        let entrySourcePlan = do
-              let n = fromIntegral options.iteratorBufferSize
-              xs <- liftIO (LSMT.take n cursor)
-              M.yield xs
-              unless (V.length xs < n) entrySourcePlan
-
-        -- Helper to convert LSMT.Entry to a key-value pair.
-        let toKeyValue e = (LSMT.getEntryKey e, LSMT.getEntryValue e)
-
-        M.runMachineT $
-          M.construct entrySourcePlan ~> M.asParts ~> M.mapping toKeyValue
-
---------------------------------------------------------------------------------
--- Indexing
-
-{- |
-The options for `indexer`.
-
-[`indexerBufferSize` :: `Word32`]:
-  The size of the index buffer in number of elements.
-  The default is 10.
--}
-data IndexerOptions e k v = IndexerOptions
-  { extractKV :: !(e -> Maybe (k, v))
-  , indexerBufferSize :: !Word32
-  }
-
-{- |
-The default options for `indexer`.
--}
-defaultIndexerOptions :: (e -> Maybe (k, v)) -> IndexerOptions e k v
-defaultIndexerOptions extractKV =
-  IndexerOptions{indexerBufferSize = 10, ..}
-
-{- |
-Index data from a GHC event stream.
--}
-indexer ::
-  IndexerOptions e k v ->
-  Table k v ->
-  M.ProcessT IO e Void
-indexer options table =
-  M.mapping options.extractKV
-    ~> M.asParts
-    ~> M.buffered (fromIntegral options.indexerBufferSize)
-    ~> M.mapping V.fromList
-    ~> M.repeatedly (M.await >>= liftIO . inserts table)
-
---------------------------------------------------------------------------------
--- Helpers
+saveSnapshot :: LSMT.Table IO k v Void -> IO ()
+saveSnapshot = LSMT.saveSnapshot snapshotName snapshotLabel
 
 {- |
 Internal helper.
 
 Delete an LSM Tree snapshot, but ignore any `LSMT.ErrSnapshotDoesNotExist` errors.
 -}
-deleteSnapshot :: LSMT.Session IO -> LSMT.SnapshotName -> IO ()
-deleteSnapshot session snapshotName =
+deleteSnapshot :: LSMT.Session IO -> IO ()
+deleteSnapshot session =
   LSMT.deleteSnapshot session snapshotName
     `catch` \LSMT.ErrSnapshotDoesNotExist{} -> pure ()
 
---------------------------------------------------------------------------------
--- Serialisation
---------------------------------------------------------------------------------
+{- |
+Internal helper.
+
+The relative `FilePath` for the snapshot directory used by all databases.
+-}
+snapshotRelPath :: FilePath
+snapshotRelPath = "data"
 
 {- |
-Wrapper that derives the required `LSMT.SerialiseKey` and `LSMT.SerialiseValue`
-instances from a `Binary` instance.
+Internal helper.
 
-Derives `LSMT.ResolveValue` via `LSMT.ResolveAsFirst`.
+The `LSMT.SnapshotName` used by all databases.
 -}
-newtype SerialiseViaBinary v = SerialiseViaBinary {value :: v}
-
-instance (Binary v) => LSMT.SerialiseKey (SerialiseViaBinary v) where
-  serialiseKey :: SerialiseViaBinary v -> LSMT.RawBytes
-  serialiseKey = LSMT.serialiseKey . B.encode . (.value)
-
-  deserialiseKey :: LSMT.RawBytes -> SerialiseViaBinary v
-  deserialiseKey = SerialiseViaBinary . B.decode . LSMT.deserialiseKey
-
-instance (Binary v) => LSMT.SerialiseValue (SerialiseViaBinary v) where
-  serialiseValue :: SerialiseViaBinary v -> LSMT.RawBytes
-  serialiseValue = LSMT.serialiseValue . B.encode . (.value)
-
-  deserialiseValue :: LSMT.RawBytes -> SerialiseViaBinary v
-  deserialiseValue = SerialiseViaBinary . B.decode . LSMT.deserialiseValue
-
-deriving via LSMT.ResolveAsFirst (SerialiseViaBinary v) instance LSMT.ResolveValue (SerialiseViaBinary v)
+snapshotName :: LSMT.SnapshotName
+snapshotName = LSMT.toSnapshotName snapshotRelPath
 
 {- |
-Wrapper that derives the required `LSMT.SerialiseKey` and `LSMT.SerialiseValue`
-instances by unwrapping the newtype.
+Internal helper.
 
-Derives `LSMT.ResolveValue` via `LSMT.ResolveAsFirst`.
+The `LSMT.SnapshotLabel` used by all databases.
 -}
-newtype SerialiseVia v u = SerialiseVia {value :: v}
-
-instance (Coercible v u, LSMT.SerialiseKey u) => LSMT.SerialiseKey (SerialiseVia v u) where
-  serialiseKey :: SerialiseVia v u -> LSMT.RawBytes
-  serialiseKey = LSMT.serialiseKey . coerce @_ @u
-
-  deserialiseKey :: LSMT.RawBytes -> SerialiseVia v u
-  deserialiseKey = coerce @u @_ . LSMT.deserialiseKey
-
-instance (Coercible v u, LSMT.SerialiseValue u) => LSMT.SerialiseValue (SerialiseVia v u) where
-  serialiseValue :: SerialiseVia v u -> LSMT.RawBytes
-  serialiseValue = LSMT.serialiseValue . coerce @_ @u
-
-  deserialiseValue :: LSMT.RawBytes -> SerialiseVia v u
-  deserialiseValue = coerce @u @_ . LSMT.deserialiseValue
-
-deriving via LSMT.ResolveAsFirst (SerialiseVia v u) instance LSMT.ResolveValue (SerialiseVia v u)
+snapshotLabel :: LSMT.SnapshotLabel
+snapshotLabel = LSMT.SnapshotLabel (T.pack "ipedb:1")
 
 --------------------------------------------------------------------------------
 -- Errors
 --------------------------------------------------------------------------------
-
-{- |
-This error is raised if the table name is invalid.
-
-See `LSMT.isValidSnapshotName`.
--}
-newtype InvalidTableNameError = InvalidTableNameError String
-  deriving (Show)
-
-instance Exception InvalidTableNameError
 
 {- |
 This error is raised if the target path already exists.
