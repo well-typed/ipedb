@@ -52,7 +52,7 @@ module IpeDB.Database (
 import Codec.Archive.Tar qualified as Tar
 import Codec.Archive.Tar.Check qualified as Tar
 import Codec.Compression.GZip qualified as GZip
-import Control.Exception (Exception, SomeException (..), bracketOnError, bracket_, catch, throwIO)
+import Control.Exception (Exception (..), SomeException (..), bracketOnError, bracket_, catch, throwIO)
 import Control.Monad (unless, when)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Binary (Binary)
@@ -600,4 +600,7 @@ This error is raised if the target path already exists.
 newtype TargetExistsError = TargetExistsError FilePath
   deriving (Show)
 
-instance Exception TargetExistsError
+instance Exception TargetExistsError where
+  displayException :: TargetExistsError -> String
+  displayException (TargetExistsError targetPath) =
+    "The file " <> targetPath <> " already exists; refusing to overwrite."
