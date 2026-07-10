@@ -73,6 +73,7 @@ library
     src-internal
 
   exposed-modules:
+    IpeDB.Database
     IpeDB.Database.Class
     IpeDB.Database.LSMTree
     IpeDB.Types.CostCentre
