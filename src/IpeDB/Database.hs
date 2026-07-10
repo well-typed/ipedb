@@ -10,8 +10,7 @@ module IpeDB.Database (
   -- * Constraints
   Key,
   Value,
-
-  -- ** Helper
+  SerialiseVia (..),
   SerialiseViaBinary (..),
 
   -- * Sessions
