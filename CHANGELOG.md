@@ -2,7 +2,7 @@
 
 ## 0.2.0.0 -- 2026-07-02
 
-This version is a complete reimplementation of the `ipedb` tool and library.
+This version is a complete reimplementation of the `ipedb` tool and library and adds the new `ccdb` tool.
 
 - The database format is changed to `lsm-tree`, which substantially speeds up indexing.
   For instance, indexing the IPE entries for GHC goes down from 1-1/2 minutes to 7 seconds.
