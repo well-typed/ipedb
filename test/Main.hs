@@ -14,11 +14,11 @@ import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 main :: IO ()
 main = do
   defaultMain . testGroup "Tests" $
-    [ testGroup "IpeDB" $
-        [ testIndexWith TestIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "lsm"}
-        , testIndexWith TestIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tar"}
-        , testIndexWith TestIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tgz"}
-        , testEqualWith TestEqualOptions{eventlog1 = dataDir </> "fibber-1.eventlog.gz", eventlog2 = dataDir </> "fibber-2.eventlog.gz", tableFormat = "tgz"}
+    [ testGroup "ipedb" $
+        [ testIpeDBIndexWith TestIpeDBIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "lsm"}
+        , testIpeDBIndexWith TestIpeDBIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tar"}
+        , testIpeDBIndexWith TestIpeDBIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tgz"}
+        , testIpeDBEqualWith TestIpeDBEqualOptions{eventlog1 = dataDir </> "fibber-1.eventlog.gz", eventlog2 = dataDir </> "fibber-2.eventlog.gz", tableFormat = "tgz"}
         ]
     , testGroup "SrcLoc" $
         [ testSrcLoc str maybeSrcLoc
@@ -44,17 +44,17 @@ toIpeDBPath eventlog = replaceExtensions (takeFileName eventlog)
 --------------------------------------------------------------------------------
 -- IpeDB Indexer
 
-data TestIndexOptions = TestIndexOptions
+data TestIpeDBIndexOptions = TestIpeDBIndexOptions
   { eventlog :: FilePath
   , tableFormat :: String
   }
 
-instance HasField "testName" TestIndexOptions TestName where
-  getField :: TestIndexOptions -> TestName
+instance HasField "testName" TestIpeDBIndexOptions TestName where
+  getField :: TestIpeDBIndexOptions -> TestName
   getField options = toIpeDBPath options.eventlog options.tableFormat
 
-testIndexWith :: TestIndexOptions -> TestTree
-testIndexWith options =
+testIpeDBIndexWith :: TestIpeDBIndexOptions -> TestTree
+testIpeDBIndexWith options =
   testCase options.testName $ do
     withSystemTempDirectory ("ipedb-test-" <> options.testName) $ \tempDir -> do
       let ipedb = tempDir </> toIpeDBPath options.eventlog options.tableFormat
@@ -84,21 +84,21 @@ testIndexWith options =
 --------------------------------------------------------------------------------
 -- IpeDB Stability
 
-data TestEqualOptions = TestEqualOptions
+data TestIpeDBEqualOptions = TestIpeDBEqualOptions
   { eventlog1 :: FilePath
   , eventlog2 :: FilePath
   , tableFormat :: String
   }
 
-instance HasField "testName" TestEqualOptions TestName where
-  getField :: TestEqualOptions -> TestName
+instance HasField "testName" TestIpeDBEqualOptions TestName where
+  getField :: TestIpeDBEqualOptions -> TestName
   getField options =
     toIpeDBPath options.eventlog1 options.tableFormat
       <> "="
       <> toIpeDBPath options.eventlog2 options.tableFormat
 
-testEqualWith :: TestEqualOptions -> TestTree
-testEqualWith options =
+testIpeDBEqualWith :: TestIpeDBEqualOptions -> TestTree
+testIpeDBEqualWith options =
   testCase options.testName $ do
     withSystemTempDirectory ("ipedb-test-" <> options.testName) $ \tempDir -> do
       let ipedb1 = tempDir </> toIpeDBPath options.eventlog1 options.tableFormat
