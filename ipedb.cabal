@@ -125,30 +125,6 @@ executable ipedb
     vector >=0.11 && <0.14,
     zlib >=0.7 && <0.8,
 
-test-suite ipedb-test
-  import: language
-  type: exitcode-stdio-1.0
-  hs-source-dirs: test
-  main-is: Main.hs
-  build-depends:
-    base >=4.18 && <4.23,
-    directory >=1.2.7 && <1.4,
-    filepath >=1 && <1.6,
-    ipedb,
-    process >=1.6 && <1.7,
-    tasty >=1.5 && <1.6,
-    tasty-hunit >=0.10 && <0.11,
-    temporary >=1.1 && <1.4,
-
-  build-tool-depends:
-    ipedb:ipedb
-
-  other-modules:
-    Paths_ipedb
-
-  autogen-modules:
-    Paths_ipedb
-
 executable ccdb
   import: language
   hs-source-dirs: app-ccdb
@@ -165,3 +141,28 @@ executable ccdb
     optparse-applicative >=0.17 && <0.20,
     vector >=0.11 && <0.14,
     zlib >=0.7 && <0.8,
+
+test-suite ipedb-test
+  import: language
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Main.hs
+  build-depends:
+    base >=4.18 && <4.23,
+    directory >=1.2.7 && <1.4,
+    filepath >=1 && <1.6,
+    ipedb,
+    process >=1.6 && <1.7,
+    tasty >=1.5 && <1.6,
+    tasty-hunit >=0.10 && <0.11,
+    temporary >=1.1 && <1.4,
+
+  build-tool-depends:
+    ipedb:ccdb,
+    ipedb:ipedb,
+
+  other-modules:
+    Paths_ipedb
+
+  autogen-modules:
+    Paths_ipedb

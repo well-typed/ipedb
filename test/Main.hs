@@ -2,6 +2,7 @@
 
 module Main (main) where
 
+import Data.Foldable (for_)
 import GHC.Records
 import IpeDB.Types.SrcLoc (Range (..), SrcLoc (..), parseRange, parseSrcLoc)
 import System.Directory (doesPathExist)
@@ -14,12 +15,70 @@ import Test.Tasty.HUnit (assertBool, assertEqual, testCase)
 main :: IO ()
 main = do
   defaultMain . testGroup "Tests" $
-    [ testGroup "ipedb" $
-        [ testIpeDBIndexWith TestIpeDBIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "lsm"}
-        , testIpeDBIndexWith TestIpeDBIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tar"}
-        , testIpeDBIndexWith TestIpeDBIndexOptions{eventlog = dataDir </> "oddball.eventlog.gz", tableFormat = "tgz"}
-        , testIpeDBEqualWith TestIpeDBEqualOptions{eventlog1 = dataDir </> "fibber-1.eventlog.gz", eventlog2 = dataDir </> "fibber-2.eventlog.gz", tableFormat = "tgz"}
-        ]
+    [ testGroup "ccdb" $
+        let
+          -- Test indexing the jumpy-jump eventlog.
+          testCCDBIndexJumpyJumpWith tableFormat =
+            TestIndexOptions
+              { executable = "ccdb"
+              , eventlog = dataDir </> "jumpy-jump.eventlog.gz"
+              , numEntries = 277
+              , checkEntries =
+                  [
+                    ( "0x2"
+                    , "0x2: Just (CostCentre {\
+                      \ccLabel = \"jumpyJump0\", \
+                      \ccModule = \"Main\", \
+                      \ccSrcLoc = SrcLoc {srcFilePath = \"app/Main.hs\", \
+                      \srcRange = Just (Range'MultiLine {line = 40, column = 1, endLine = 55, endColumn = 23})}, ccIsCAF = False})\n"
+                    )
+                  ]
+              , ..
+              }
+         in
+          [ testIndexWith (testCCDBIndexJumpyJumpWith "lsm")
+          , testIndexWith (testCCDBIndexJumpyJumpWith "tar")
+          , testIndexWith (testCCDBIndexJumpyJumpWith "tgz")
+          ]
+    , testGroup "ipedb" $
+        let
+          -- Test indexing the oddball eventlog.
+          testIpeDBIndexOddbalWith tableFormat =
+            TestIndexOptions
+              { executable = "ipedb"
+              , eventlog = dataDir </> "oddball.eventlog.gz"
+              , numEntries = 157003
+              , checkEntries =
+                  [
+                    ( "0x100000000"
+                    , "0x100000000: Just (InfoProv {\
+                      \ipName = \"I#_Main_1_con_info\", \
+                      \ipClosureDesc = 3, \
+                      \ipTyDesc = \"Int\", \
+                      \ipLabel = \"main\", \
+                      \ipModule = \"Main\", \
+                      \ipSrcLoc = SrcLoc {\
+                      \srcFilePath = \"app/Main.hs\", \
+                      \srcRange = Just (Range'MultiLine {line = 13, column = 1, endLine = 16, endColumn = 11})}})\n"
+                    )
+                  ]
+              , ..
+              }
+          -- Test stability of indexing fibber-1 and fibber-2.
+          testIpeDBEqualFibber =
+            TestEqualOptions
+              { executable = "ipedb"
+              , eventlog1 = dataDir </> "fibber-1.eventlog.gz"
+              , eventlog2 = dataDir </> "fibber-2.eventlog.gz"
+              , numEntries = 92073
+              , tableFormat = "tgz"
+              }
+         in
+          [ testIndexWith (testIpeDBIndexOddbalWith "lsm")
+          , testIndexWith (testIpeDBIndexOddbalWith "tar")
+          , testIndexWith (testIpeDBIndexOddbalWith "tgz")
+          , testEqualWith testIpeDBEqualFibber
+          ]
     , testGroup "SrcLoc" $
         [ testSrcLoc str maybeSrcLoc
         | (str, maybeSrcLoc) <- srcLocGolden
@@ -37,85 +96,84 @@ main = do
 dataDir :: FilePath
 dataDir = "test" </> "data"
 
--- | Get an IpeDB filename from an eventlog filename.
-toIpeDBPath :: FilePath -> String -> FilePath
-toIpeDBPath eventlog = replaceExtensions (takeFileName eventlog)
+-- | Get the database filename from an eventlog filename.
+toDatabasePath :: FilePath -> String -> FilePath
+toDatabasePath eventlog = replaceExtensions (takeFileName eventlog)
 
 --------------------------------------------------------------------------------
 -- IpeDB Indexer
 
-data TestIpeDBIndexOptions = TestIpeDBIndexOptions
-  { eventlog :: FilePath
+data TestIndexOptions = TestIndexOptions
+  { executable :: String
+  , eventlog :: FilePath
   , tableFormat :: String
+  , numEntries :: Int
+  , checkEntries :: [(String, String)]
   }
 
-instance HasField "testName" TestIpeDBIndexOptions TestName where
-  getField :: TestIpeDBIndexOptions -> TestName
-  getField options = toIpeDBPath options.eventlog options.tableFormat
+instance HasField "testName" TestIndexOptions TestName where
+  getField :: TestIndexOptions -> TestName
+  getField options = options.executable <> "[" <> toDatabasePath options.eventlog options.tableFormat <> "]"
 
-testIpeDBIndexWith :: TestIpeDBIndexOptions -> TestTree
-testIpeDBIndexWith options =
+testIndexWith :: TestIndexOptions -> TestTree
+testIndexWith options =
   testCase options.testName $ do
     withSystemTempDirectory ("ipedb-test-" <> options.testName) $ \tempDir -> do
-      let ipedb = tempDir </> toIpeDBPath options.eventlog options.tableFormat
+      let databasePath = tempDir </> toDatabasePath options.eventlog options.tableFormat
 
       -- Create an IpeDB.
-      callProcess "ipedb" ["index", options.eventlog, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, "--output=" <> ipedb]
-      assertBool ("Missing output " <> ipedb) =<< doesPathExist ipedb
+      callProcess options.executable ["index", options.eventlog, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, "--output=" <> databasePath]
+      assertBool ("Missing output " <> databasePath) =<< doesPathExist databasePath
 
       -- Count the number of entries in the IpeDB.
-      entries <- readProcess "ipedb" ["list", ipedb, "--table-format=" <> options.tableFormat] ""
-      assertEqual ("IpeDB " <> ipedb <> " contains wrong number of entries.") 157003 (length $ lines entries)
+      entries <- readProcess options.executable ["list", databasePath, "--table-format=" <> options.tableFormat] ""
+      assertEqual ("Database " <> databasePath <> " contains wrong number of entries.") options.numEntries (length $ lines entries)
 
       -- Query a particular entry.
-      let expectedEntry =
-            "0x100000000: Just (InfoProv {\
-            \ipName = \"I#_Main_1_con_info\", \
-            \ipClosureDesc = 3, \
-            \ipTyDesc = \"Int\", \
-            \ipLabel = \"main\", \
-            \ipModule = \"Main\", \
-            \ipSrcLoc = SrcLoc {\
-            \srcFilePath = \"app/Main.hs\", \
-            \srcRange = Just (Range'MultiLine {line = 13, column = 1, endLine = 16, endColumn = 11})}})\n"
-      actualEntry <- readProcess "ipedb" ["query", ipedb, "--table-format=" <> options.tableFormat, "0x100000000"] ""
-      assertEqual ("IpeDB " <> ipedb <> " contains wrong entry for 0x100000000.") expectedEntry actualEntry
+      for_ options.checkEntries $ \(entryKey, entry) -> do
+        actualEntry <- readProcess options.executable ["query", databasePath, "--table-format=" <> options.tableFormat, entryKey] ""
+        assertEqual ("Database " <> databasePath <> " contains wrong entry for 0x100000000.") entry actualEntry
 
 --------------------------------------------------------------------------------
 -- IpeDB Stability
 
-data TestIpeDBEqualOptions = TestIpeDBEqualOptions
-  { eventlog1 :: FilePath
+data TestEqualOptions = TestEqualOptions
+  { executable :: String
+  , eventlog1 :: FilePath
   , eventlog2 :: FilePath
+  , numEntries :: Int
   , tableFormat :: String
   }
 
-instance HasField "testName" TestIpeDBEqualOptions TestName where
-  getField :: TestIpeDBEqualOptions -> TestName
+instance HasField "testName" TestEqualOptions TestName where
+  getField :: TestEqualOptions -> TestName
   getField options =
-    toIpeDBPath options.eventlog1 options.tableFormat
+    options.executable
+      <> "["
+      <> toDatabasePath options.eventlog1 options.tableFormat
       <> "="
-      <> toIpeDBPath options.eventlog2 options.tableFormat
+      <> toDatabasePath options.eventlog2 options.tableFormat
+      <> "]"
 
-testIpeDBEqualWith :: TestIpeDBEqualOptions -> TestTree
-testIpeDBEqualWith options =
+testEqualWith :: TestEqualOptions -> TestTree
+testEqualWith options =
   testCase options.testName $ do
     withSystemTempDirectory ("ipedb-test-" <> options.testName) $ \tempDir -> do
-      let ipedb1 = tempDir </> toIpeDBPath options.eventlog1 options.tableFormat
-      let ipedb2 = tempDir </> toIpeDBPath options.eventlog2 options.tableFormat
+      let databasePath1 = tempDir </> toDatabasePath options.eventlog1 options.tableFormat
+      let databasePath2 = tempDir </> toDatabasePath options.eventlog2 options.tableFormat
 
-      -- Create two IpeDBs.
-      callProcess "ipedb" ["index", options.eventlog1, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, "--output=" <> ipedb1]
-      assertBool ("Missing output " <> ipedb1) =<< doesPathExist ipedb1
-      callProcess "ipedb" ["index", options.eventlog2, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, "--output=" <> ipedb2]
-      assertBool ("Missing output " <> ipedb2) =<< doesPathExist ipedb2
+      -- Create two databases.
+      callProcess options.executable ["index", options.eventlog1, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, "--output=" <> databasePath1]
+      assertBool ("Missing output " <> databasePath1) =<< doesPathExist databasePath1
+      callProcess options.executable ["index", options.eventlog2, "--eventlog-encoding=gzip", "--table-format=" <> options.tableFormat, "--output=" <> databasePath2]
+      assertBool ("Missing output " <> databasePath2) =<< doesPathExist databasePath2
 
-      -- Count the number of entries in the first IpeDB.
-      entries <- readProcess "ipedb" ["list", ipedb1, "--table-format=" <> options.tableFormat] ""
-      assertEqual ("IpeDB " <> ipedb1 <> " contains wrong number of entries.") 92073 (length $ lines entries)
+      -- Count the number of entries in the first database.
+      entries <- readProcess options.executable ["list", databasePath1, "--table-format=" <> options.tableFormat] ""
+      assertEqual ("Database " <> databasePath1 <> " contains wrong number of entries.") options.numEntries (length $ lines entries)
 
-      -- Test that the two generated IpeDBs are equal.
-      callProcess "ipedb" ["check", ipedb1, ipedb2]
+      -- Test that the two generated databases are equal.
+      callProcess options.executable ["check", databasePath1, databasePath2]
 
 --------------------------------------------------------------------------------
 -- SrcLoc
