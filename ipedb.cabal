@@ -148,3 +148,20 @@ test-suite ipedb-test
 
   autogen-modules:
     Paths_ipedb
+
+executable ccdb
+  import: language
+  hs-source-dirs: app-ccdb
+  main-is: Main.hs
+  other-modules: Paths_ipedb
+  autogen-modules: Paths_ipedb
+  build-depends:
+    base >=4.16 && <4.23,
+    bytestring >=0.11 && <0.13,
+    data-default >=0.2 && <0.9,
+    ghc-events >=0.20 && <0.21,
+    ipedb,
+    machines >=0.7.4 && <0.8,
+    optparse-applicative >=0.17 && <0.20,
+    vector >=0.11 && <0.14,
+    zlib >=0.7 && <0.8,
