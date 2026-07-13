@@ -35,9 +35,14 @@ jobs:
       - name: 📦 Build source distibution
         run: cabal sdist all
 
+      - name: 📦 Build haddock documentation
+        run: cabal haddock all --haddock-for-hackage
+
       - name: 🚀 Publish to GitHub Releases
         uses: softprops/action-gh-release@v3
         with:
-          files: ipedb-*.tar.gz
-          working_directory: dist-newstyle/sdist
+          files: |
+            sdist/ipedb-*.tar.gz
+            ipedb-*-docs.tar.gz
+          working_directory: dist-newstyle
           fail_on_unmatched_files: true
