@@ -1,4 +1,4 @@
-name: release
+name: Publish
 
 on:
   push:
@@ -33,9 +33,9 @@ jobs:
           cabal-version: ${{ steps.dev-dependencies.outputs.cabal }}
 
       - name: 📦 Build source distibution
-        run: cabal sdist ipedb
+        run: cabal sdist all
 
-      - name: Release
+      - name: 🚀 Publish to GitHub Releases
         uses: softprops/action-gh-release@v3
         with:
           files: ipedb-*.tar.gz
