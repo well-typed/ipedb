@@ -44,7 +44,7 @@ instance Read InfoProvId where
   readsPrec _ = P.readP_to_S (InfoProvId <$> (P.string "0x" *> readHexP))
 
 {- |
-The type of an info table provenance entry, as produced by the `GHC.RTS.Events.InfoTableProv` event.
+The type of an info table provenance entry, as produced by the v`GHC.RTS.Events.InfoTableProv` event.
 -}
 data InfoProv = InfoProv
   { ipName :: !Text
@@ -57,7 +57,7 @@ data InfoProv = InfoProv
   deriving stock (Generic, Eq, Ord, Show, Read)
 
 {- |
-Extract an `InfoProv` from a @ghc-events@ `Event`.
+Extract an t`InfoProv` from a @ghc-events@ t`Event`.
 -}
 toInfoProv :: Event -> Maybe (InfoProvId, InfoProv)
 toInfoProv ev

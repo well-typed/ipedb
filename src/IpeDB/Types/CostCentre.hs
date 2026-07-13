@@ -51,7 +51,7 @@ instance Read CostCentreId where
   readsPrec _ = P.readP_to_S (CostCentreId <$> (P.string "0x" *> readHexP))
 
 {- |
-The type of a cost-centre entry, as produced by the `GHC.RTS.Events.HeapProfCostCentre` event.
+The type of a cost-centre entry, as produced by the v`GHC.RTS.Events.HeapProfCostCentre` event.
 -}
 data CostCentre = CostCentre
   { ccLabel :: !Text
@@ -62,7 +62,7 @@ data CostCentre = CostCentre
   deriving stock (Generic, Eq, Ord, Show, Read)
 
 {- |
-Extract a `CostCentre` from a @ghc-events@ `Event`.
+Extract a t`CostCentre` from a @ghc-events@ t`Event`.
 -}
 toCostCentre :: Event -> Maybe (CostCentreId, CostCentre)
 toCostCentre ev
