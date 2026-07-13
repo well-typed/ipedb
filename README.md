@@ -11,8 +11,8 @@ The IpeDB package contains a library for building and using GHC IPE and cost-cen
 - **Working with cost-centre data using `ccdb`**
   - [What is cost-centre data?](#what-is-cost-centre-data)
   - [How to build a binary with cost-centre data?](#how-to-build-a-binary-with-cost-centre-data)
-  - [How to build an cost-centre database with `ccdb`?](#how-to-build-an-cost-centre-database-with-ccdb)
-  - [How to query an cost-centre database with `ccdb`?](#how-to-query-an-cost-centre-database-with-ccdb)
+  - [How to build a cost-centre database with `ccdb`?](#how-to-build-a-cost-centre-database-with-ccdb)
+  - [How to query a cost-centre database with `ccdb`?](#how-to-query-a-cost-centre-database-with-ccdb)
 
 ---
 
