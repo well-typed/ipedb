@@ -110,7 +110,7 @@ library
 
 executable ipedb
   import: language
-  hs-source-dirs: app
+  hs-source-dirs: app-ipedb
   main-is: Main.hs
   other-modules: Paths_ipedb
   autogen-modules: Paths_ipedb
