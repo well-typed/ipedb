@@ -1,0 +1,43 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*.*"
+
+jobs:
+  ################################################################################
+  # Publish source distribution to GitHub Releases
+  ################################################################################
+  release:
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v7
+
+      # The dev-dependencies file lists the versions of all system dependencies
+      # required for development. It is formatted in such a way that it is easy
+      # to use from GitHub Actions. This step outputs the versions to make them
+      # available to all following steps under "steps.dev-dependencies.outputs"
+      - name: 🗄️ Read dev-dependencies
+        run: cat "./scripts/dev-dependencies.txt" >> "$GITHUB_OUTPUT"
+        id: dev-dependencies
+
+      - name: 🛠️ Setup Haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ steps.dev-dependencies.outputs.ghc }}
+          cabal-version: ${{ steps.dev-dependencies.outputs.cabal }}
+
+      - name: 📦 Build source distibution
+        run: cabal sdist ipedb
+
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ipedb-*.tar.gz
+          working_directory: dist-newstyle/sdist
+          fail_on_unmatched_files: true
