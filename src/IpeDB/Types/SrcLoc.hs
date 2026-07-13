@@ -175,8 +175,6 @@ https://github.com/ghc/ghc/blob/674858e3fb1b7fe644d7ec5d4b0c6d9f18d7bc51/compile
 -}
 
 {- |
-Internal helper.
-
 Pretty-printer for ranges.
 -}
 ppRange :: Range -> ShowS

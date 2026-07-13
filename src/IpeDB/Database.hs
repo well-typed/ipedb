@@ -82,8 +82,18 @@ import Prelude hiding (lookup)
 -- Constraints
 --------------------------------------------------------------------------------
 
+{- |
+The constraints needed to use a type as key in a t`Table`.
+
+The types t`SerialiseVia` or t`SerialiseViaBinary` provide default instances.
+-}
 type Key k = LSMT.SerialiseKey k
 
+{- |
+The constraints needed to use a type as value in a t`Table`.
+
+The types t`SerialiseVia` or t`SerialiseViaBinary` provide default instances.
+-}
 type Value v = (LSMT.SerialiseValue v, LSMT.ResolveValue v)
 
 --------------------------------------------------------------------------------
@@ -229,7 +239,7 @@ data Table k v
   }
 
 {- |
-Configuration options for tables, which can be used for performance tuning.
+Options for `withNewTable`. These can be used for performance tuning.
 -}
 newtype TableOptions
   = -- | See the @lsm-tree@ documentation for `LSMT.TableConfig`.
@@ -238,7 +248,7 @@ newtype TableOptions
     }
 
 {- |
-The default `TableOptions`.
+The default options for `withNewTable`.
 -}
 defaultTableOptions :: TableOptions
 defaultTableOptions =
@@ -495,7 +505,7 @@ withTableFrom session inputRelPath inputFormat action = do
       action Table{..}
 
 {- |
-Flatten an @lsm-tree@ `Table`.
+Flatten an @lsm-tree@ t`Table`.
 -}
 flattenTable ::
   (Value v) =>
