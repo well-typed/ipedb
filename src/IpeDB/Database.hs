@@ -64,7 +64,7 @@ import Data.Coerce (Coercible, coerce)
 import Data.Default (Default (..))
 import Data.Machine ((~>))
 import Data.Machine qualified as M
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromJust, fromMaybe, isNothing)
 import Data.Text qualified as T
 import Data.Vector (Vector)
 import Data.Vector qualified as V
@@ -399,7 +399,8 @@ indexer ::
   M.ProcessT IO e Void
 indexer extractKV options table =
   M.mapping extractKV
-    ~> M.asParts
+    ~> M.droppingWhile isNothing
+    ~> M.takingJusts
     ~> M.buffered (fromIntegral options.indexerBufferSize)
     ~> M.mapping V.fromList
     ~> M.repeatedly (M.await >>= liftIO . inserts table)
