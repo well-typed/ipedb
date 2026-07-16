@@ -390,9 +390,14 @@ instance Default IndexerOptions where
 
 {- |
 Index data from a GHC event stream.
+
+__Warning:__ This machine assumes that all events for which the extraction
+function returns @Just@ are consecutive. This is true for cost centre and
+info table provenance declarations in the GHC eventlog.
 -}
 indexer ::
   (Key k, Value v) =>
+  -- | The function that extracts key–value data from the event stream.
   (e -> Maybe (k, v)) ->
   IndexerOptions ->
   Table k v ->

@@ -1,5 +1,10 @@
 # Revision history for ipedb
 
+## 0.2.0.1 -- 2026-07-16
+
+- Fix issue where the `indexer` does not stop until the entire eventlog has been processed,
+  rather than immediately after the relevant section.
+
 ## 0.2.0.0 -- 2026-07-02
 
 This version is a complete reimplementation of the `ipedb` tool and library and adds the new `ccdb` tool.
