@@ -43,7 +43,7 @@ jobs:
 
       - name: 🛠️ Setup Haskell
         id: setup-haskell
-        uses: haskell-actions/setup@v2
+        uses: haskell-actions/setup@v2.11.0
         with:
           ghc-version: ${{ matrix.ghc-version }}
 
@@ -137,7 +137,7 @@ jobs:
         id: dev-dependencies
 
       - name: 🛠️ Install Haskell
-        uses: haskell-actions/setup@v2
+        uses: haskell-actions/setup@v2.11.0
         with:
           ghc-version: ${{ steps.dev-dependencies.outputs.ghc }}
           cabal-version: ${{ steps.dev-dependencies.outputs.cabal }}
@@ -191,7 +191,7 @@ jobs:
         id: dev-dependencies
 
       - name: 🛠️ Setup Haskell
-        uses: haskell-actions/setup@v2
+        uses: haskell-actions/setup@v2.11.0
         with:
           ghc-version: ${{ steps.dev-dependencies.outputs.ghc }}
           cabal-version: ${{ steps.dev-dependencies.outputs.cabal }}
